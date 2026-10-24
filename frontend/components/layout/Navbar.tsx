@@ -76,14 +76,7 @@ export const Navbar: React.FC = () => {
   const navLinks = [
     { href: "/", label: "Verify Evidence" },
     { href: "/history", label: "Case History" },
-    {
-      href: "/audit",
-      label: "Audit Ledger",
-      badge: mounted && currentUser?.role === "admin" ? "Admin" : undefined,
-    },
-    ...(mounted && currentUser?.role === "admin"
-      ? [{ href: "/admin", label: "Admin Panel", badge: "Admin" }]
-      : []),
+    { href: "/audit", label: "Audit Ledger" },
   ];
 
   return (
@@ -127,18 +120,6 @@ export const Navbar: React.FC = () => {
                 <span className={isActive ? "text-white font-bold" : "text-current"}>
                   {item.label}
                 </span>
-                {item.badge && (
-                  <span
-                    className={cn(
-                      "text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border",
-                      item.badge === "Admin"
-                        ? "bg-neutral-800 text-neutral-100 dark:bg-neutral-700 dark:text-neutral-100 border-neutral-700"
-                        : "bg-neutral-200 text-neutral-700 dark:bg-neutral-750 dark:text-neutral-300 border-neutral-300 dark:border-neutral-650"
-                    )}
-                  >
-                    {item.badge}
-                  </span>
-                )}
               </Link>
             );
           })}
