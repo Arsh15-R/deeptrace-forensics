@@ -94,7 +94,7 @@ export function apiUrl(path: string): string {
 
   // Fallback for Vercel production to route heavy forensic analysis to laptop server
   if (!base && typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
-    base = "https://cordless-explicitly-children-donated.trycloudflare.com";
+    base = "https://red-frost-licenses-canal.trycloudflare.com";
   }
 
   if (!base) return path.startsWith("/") ? path : `/${path}`;
