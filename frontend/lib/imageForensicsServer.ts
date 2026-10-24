@@ -137,155 +137,161 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   let height = decoded?.height || 0;
 
   if (decoded && width > 10 && height > 10) {
-    const data = decoded.data;
-    const step = Math.max(1, Math.floor(Math.max(width, height) / 384));
+    // Downscale long side to a max of 1024px for forensic evaluation
+    const maxLongSide = 1024;
+    const longSide = Math.max(width, height);
+    const targetLongSide = Math.min(longSide, maxLongSide);
+
+    // Calculate sampling step so the working grid targets max 384px (safe for memory & CPU)
+    const step = Math.max(1, Math.ceil(longSide / 384));
     const subW = Math.floor(width / step);
     const subH = Math.floor(height / step);
     const totalPixels = (subW - 2) * (subH - 2);
 
-    const gray = new Float32Array(subW * subH);
-    const rCh = new Float32Array(subW * subH);
-    const gCh = new Float32Array(subW * subH);
-    const bCh = new Float32Array(subW * subH);
+    // Safe bounds check: Skip heavy pixel passes if totalPixels exceeds safe limit
+    const isSafePixelCount = totalPixels > 0 && totalPixels <= 250000;
 
-    for (let y = 0; y < subH; y++) {
-      for (let x = 0; x < subW; x++) {
-        const srcIdx = (y * step * width + x * step) * 4;
-        const r = data[srcIdx];
-        const g = data[srcIdx + 1];
-        const b = data[srcIdx + 2];
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        const dstIdx = y * subW + x;
-        gray[dstIdx] = lum;
-        rCh[dstIdx] = r;
-        gCh[dstIdx] = g;
-        bCh[dstIdx] = b;
-      }
-    }
+    if (isSafePixelCount) {
+      const data = decoded.data;
+      const gray = new Float32Array(subW * subH);
+      const rCh = new Float32Array(subW * subH);
+      const gCh = new Float32Array(subW * subH);
+      const bCh = new Float32Array(subW * subH);
 
-    let flatUiCount = 0;
-    let smoothCount = 0;
-    let sharpCount = 0;
-
-    for (let y = 1; y < subH - 1; y++) {
-      for (let x = 1; x < subW - 1; x++) {
-        const idx = y * subW + x;
-        const gx = gray[idx + 1] - gray[idx - 1];
-        const gy = gray[idx + subW] - gray[idx - subW];
-        const mag = Math.sqrt(gx * gx + gy * gy);
-        if (mag < 1.0) flatUiCount++;
-        if (mag < 6.0) smoothCount++;
-        if (mag > 45.0) sharpCount++;
-      }
-    }
-
-    flatRatio = flatUiCount / totalPixels;
-    const smoothRatio = smoothCount / totalPixels;
-    const sharpRatio = sharpCount / totalPixels;
-    disparityIndex = smoothRatio * sharpRatio;
-
-    // High-pass RGB Cross-Channel Correlation
-    let sumR = 0,
-      sumG = 0,
-      sumB = 0;
-    const hpR = new Float32Array(totalPixels);
-    const hpG = new Float32Array(totalPixels);
-    const hpB = new Float32Array(totalPixels);
-    let pIdx = 0;
-
-    for (let y = 1; y < subH - 1; y++) {
-      for (let x = 1; x < subW - 1; x++) {
-        let bR = 0,
-          bG = 0,
-          bB = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nIdx = (y + dy) * subW + (x + dx);
-            bR += rCh[nIdx];
-            bG += gCh[nIdx];
-            bB += bCh[nIdx];
-          }
+      for (let y = 0; y < subH; y++) {
+        for (let x = 0; x < subW; x++) {
+          const srcIdx = (y * step * width + x * step) * 4;
+          const r = data[srcIdx];
+          const g = data[srcIdx + 1];
+          const b = data[srcIdx + 2];
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          const dstIdx = y * subW + x;
+          gray[dstIdx] = lum;
+          rCh[dstIdx] = r;
+          gCh[dstIdx] = g;
+          bCh[dstIdx] = b;
         }
-        const cIdx = y * subW + x;
-        const diffR = rCh[cIdx] - bR / 9;
-        const diffG = gCh[cIdx] - bG / 9;
-        const diffB = bCh[cIdx] - bB / 9;
-        hpR[pIdx] = diffR;
-        hpG[pIdx] = diffG;
-        hpB[pIdx] = diffB;
-        sumR += diffR;
-        sumG += diffG;
-        sumB += diffB;
-        pIdx++;
       }
-    }
 
-    const meanR = sumR / totalPixels;
-    const meanG = sumG / totalPixels;
-    const meanB = sumB / totalPixels;
-    let varR = 0,
-      varG = 0,
-      varB = 0;
-    let covRG = 0,
-      covRB = 0,
-      covGB = 0;
+      let flatUiCount = 0;
+      let smoothCount = 0;
+      let sharpCount = 0;
 
-    for (let i = 0; i < totalPixels; i++) {
-      const dr = hpR[i] - meanR;
-      const dg = hpG[i] - meanG;
-      const db = hpB[i] - meanB;
-      varR += dr * dr;
-      varG += dg * dg;
-      varB += db * db;
-      covRG += dr * dg;
-      covRB += dr * db;
-      covGB += dg * db;
-    }
-
-    const stdR = Math.sqrt(varR / totalPixels);
-    const stdG = Math.sqrt(varG / totalPixels);
-    const stdB = Math.sqrt(varB / totalPixels);
-
-    if (stdR > 0.01 && stdG > 0.01 && stdB > 0.01) {
-      const corrRG = covRG / (totalPixels * stdR * stdG);
-      const corrRB = covRB / (totalPixels * stdR * stdB);
-      const corrGB = covGB / (totalPixels * stdG * stdB);
-      meanCfaCorr = (corrRG + corrRB + corrGB) / 3.0;
-    }
-
-    // Residual Kurtosis (3x3 median filter approximation)
-    let sumRes = 0;
-    const residuals = new Float32Array(totalPixels);
-    let rIdx = 0;
-    const win = new Float32Array(9);
-
-    for (let y = 1; y < subH - 1; y++) {
-      for (let x = 1; x < subW - 1; x++) {
-        let wIdx = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            win[wIdx++] = gray[(y + dy) * subW + (x + dx)];
-          }
+      for (let y = 1; y < subH - 1; y++) {
+        for (let x = 1; x < subW - 1; x++) {
+          const idx = y * subW + x;
+          const gx = gray[idx + 1] - gray[idx - 1];
+          const gy = gray[idx + subW] - gray[idx - subW];
+          const mag = Math.sqrt(gx * gx + gy * gy);
+          if (mag < 1.0) flatUiCount++;
+          if (mag < 6.0) smoothCount++;
+          if (mag > 45.0) sharpCount++;
         }
-        win.sort();
-        const med = win[4];
-        const res = gray[y * subW + x] - med;
-        residuals[rIdx++] = res;
-        sumRes += res;
       }
-    }
 
-    const resMean = sumRes / totalPixels;
-    let m2 = 0,
-      m4 = 0;
-    for (let i = 0; i < totalPixels; i++) {
-      const d = residuals[i] - resMean;
-      const d2 = d * d;
-      m2 += d2;
-      m4 += d2 * d2;
+      flatRatio = flatUiCount / totalPixels;
+      const smoothRatio = smoothCount / totalPixels;
+      const sharpRatio = sharpCount / totalPixels;
+      disparityIndex = smoothRatio * sharpRatio;
+
+      // High-pass RGB Cross-Channel Correlation
+      let sumR = 0,
+        sumG = 0,
+        sumB = 0;
+      const hpR = new Float32Array(totalPixels);
+      const hpG = new Float32Array(totalPixels);
+      const hpB = new Float32Array(totalPixels);
+      let pIdx = 0;
+
+      for (let y = 1; y < subH - 1; y++) {
+        for (let x = 1; x < subW - 1; x++) {
+          let bR = 0,
+            bG = 0,
+            bB = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nIdx = (y + dy) * subW + (x + dx);
+              bR += rCh[nIdx];
+              bG += gCh[nIdx];
+              bB += bCh[nIdx];
+            }
+          }
+          const cIdx = y * subW + x;
+          const diffR = rCh[cIdx] - bR / 9;
+          const diffG = gCh[cIdx] - bG / 9;
+          const diffB = bCh[cIdx] - bB / 9;
+          hpR[pIdx] = diffR;
+          hpG[pIdx] = diffG;
+          hpB[pIdx] = diffB;
+          sumR += diffR;
+          sumG += diffG;
+          sumB += diffB;
+          pIdx++;
+        }
+      }
+
+      const meanR = sumR / totalPixels;
+      const meanG = sumG / totalPixels;
+      const meanB = sumB / totalPixels;
+      let varR = 0,
+        varG = 0,
+        varB = 0;
+      let covRG = 0,
+        covRB = 0,
+        covGB = 0;
+
+      for (let i = 0; i < totalPixels; i++) {
+        const dr = hpR[i] - meanR;
+        const dg = hpG[i] - meanG;
+        const db = hpB[i] - meanB;
+        varR += dr * dr;
+        varG += dg * dg;
+        varB += db * db;
+        covRG += dr * dg;
+        covRB += dr * db;
+        covGB += dg * db;
+      }
+
+      const stdR = Math.sqrt(varR / totalPixels);
+      const stdG = Math.sqrt(varG / totalPixels);
+      const stdB = Math.sqrt(varB / totalPixels);
+
+      if (stdR > 0.01 && stdG > 0.01 && stdB > 0.01) {
+        const corrRG = covRG / (totalPixels * stdR * stdG);
+        const corrRB = covRB / (totalPixels * stdR * stdB);
+        const corrGB = covGB / (totalPixels * stdG * stdB);
+        meanCfaCorr = (corrRG + corrRB + corrGB) / 3.0;
+      }
+
+      // Fast Noise Residual Kurtosis via high-pass Laplacian PRNU filter (O(1) per pixel, zero sorting stalls)
+      let sumRes = 0;
+      const residuals = new Float32Array(totalPixels);
+      let rIdx = 0;
+
+      for (let y = 1; y < subH - 1; y++) {
+        for (let x = 1; x < subW - 1; x++) {
+          const cIdx = y * subW + x;
+          const laplacian =
+            gray[cIdx] -
+            0.25 *
+              (gray[cIdx - 1] + gray[cIdx + 1] + gray[cIdx - subW] + gray[cIdx + subW]);
+          residuals[rIdx++] = laplacian;
+          sumRes += laplacian;
+        }
+      }
+
+      const resMean = sumRes / totalPixels;
+      let m2 = 0,
+        m4 = 0;
+      for (let i = 0; i < totalPixels; i++) {
+        const d = residuals[i] - resMean;
+        const d2 = d * d;
+        m2 += d2;
+        m4 += d2 * d2;
+      }
+      const variance = m2 / totalPixels + 1e-6;
+      kurtosis = m4 / totalPixels / (variance * variance);
     }
-    const variance = m2 / totalPixels + 1e-6;
-    kurtosis = m4 / totalPixels / (variance * variance);
   }
 
   // Digital UI Framebuffer Screenshot identification

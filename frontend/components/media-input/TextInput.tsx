@@ -80,11 +80,22 @@ export const TextInput: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    const timeoutId = setTimeout(() => {
+      if (!userCancelledRef.current) {
+        controller.abort(new DOMException("Text analysis timed out after 60 seconds.", "TimeoutError"));
+      }
+    }, 60000);
+    progressTimerRef.current = timeoutId;
+
     setLoading(true);
     setError(null);
     setProgress(25);
     setProgressMsg("Tokenizing statement corpus & calculating Shannon entropy...");
     setProgressDetail("Stage 1 of 4: Ingestion & Corpus Tokenization");
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[DeepTrace Client] Text Stage 1: Ingesting text/doc payload`);
+    }
 
     if (docFile) {
       try {

@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { executeForensicAnalysis } from "@/lib/analysisEngineServer";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const reqStart = Date.now();
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -15,12 +18,12 @@ export async function POST(request: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.log(`[API /analyze/audio] Ingested ${file.name} (${buffer.length} bytes)`);
 
     const backendUrl = process.env.BACKEND_URL;
     if (backendUrl) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
+        console.log(`[API /analyze/audio] Attempting proxy to backend: ${backendUrl}`);
         const proxyForm = new FormData();
         proxyForm.append("file", file);
         if (caseRef) proxyForm.append("case_ref", caseRef);
@@ -28,16 +31,23 @@ export async function POST(request: NextRequest) {
         const backendRes = await fetch(`${backendUrl}/api/cases/analyze/audio`, {
           method: "POST",
           body: proxyForm,
-          signal: controller.signal,
+          signal: AbortSignal.timeout(5000),
         });
-        clearTimeout(timeout);
 
         if (backendRes.ok) {
-          const data = await backendRes.json();
-          return NextResponse.json(data);
+          const rawText = await backendRes.text();
+          try {
+            const data = JSON.parse(rawText);
+            console.log(`[API /analyze/audio] Backend proxy completed in ${Date.now() - reqStart}ms`);
+            return NextResponse.json(data);
+          } catch {
+            console.warn("[API /analyze/audio] Backend returned non-JSON; falling back to local engine");
+          }
+        } else {
+          console.warn(`[API /analyze/audio] Backend returned HTTP ${backendRes.status}; falling back to local engine`);
         }
-      } catch {
-        // Backend offline; proceed with high-precision serverless engine
+      } catch (backendErr: any) {
+        console.warn(`[API /analyze/audio] Backend proxy failed (${backendErr?.message || backendErr}); falling back to local engine`);
       }
     }
 
@@ -48,9 +58,10 @@ export async function POST(request: NextRequest) {
       caseRef: caseRef || undefined,
     });
 
+    console.log(`[API /analyze/audio] Successfully processed ${caseRecord.case_number} in ${Date.now() - reqStart}ms`);
     return NextResponse.json(caseRecord);
   } catch (err: any) {
-    console.error("Audio analysis endpoint error:", err);
+    console.error(`[API /analyze/audio] Fatal error after ${Date.now() - reqStart}ms:`, err);
     return NextResponse.json(
       { detail: err?.message || "Internal server error during audio analysis." },
       { status: 500 }

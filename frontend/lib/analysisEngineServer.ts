@@ -97,6 +97,9 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   const caseNumber = input.caseRef?.trim() || `CASE-2026-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
   const nowIso = new Date().toISOString();
 
+  const engineStartTime = Date.now();
+  console.log(`[ForensicEngine ${caseId}] Starting examination for "${input.filename}" (${input.mediaType}, ${input.buffer?.length || 0} bytes)`);
+
   // 1. Calculate Cryptographic SHA-256 & File Size
   let sha256 = "";
   let fileSizeBytes = 0;
@@ -145,6 +148,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // MODALITY 1: IMAGE FORENSICS
   // =========================================================================
   if (input.mediaType === "image" && input.buffer) {
+    const tImgStart = Date.now();
     const imgAnalysis = analyzeImageForensics(input.buffer, input.filename);
     verdict = imgAnalysis.verdict;
     confidence = imgAnalysis.confidence;
@@ -152,6 +156,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     lightingScore = imgAnalysis.lightingScore;
     metadataScore = imgAnalysis.metadataScore;
     breakdown.push(...imgAnalysis.breakdown);
+    console.log(`[ForensicEngine ${caseId}] Image forensic analysis completed in ${Date.now() - tImgStart}ms`);
   }
 
   // =========================================================================
@@ -413,7 +418,9 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
 
   // 2. Persist Evidence File & Anomaly Heatmap to Supabase Storage Vault concurrently
+  let storageStatus = "synced";
   if (input.buffer) {
+    const tStorageStart = Date.now();
     let uploadMime = mimeType;
     if (uploadMime === "image/jpg") uploadMime = "image/jpeg";
     if (
@@ -442,13 +449,17 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
           upsert: true,
         })
         .catch((storageErr) => {
-          console.warn("Evidence upload to Supabase storage vault notice:", storageErr);
+          console.warn(`[ForensicEngine ${caseId}] Evidence vault upload notice:`, storageErr);
+          storageStatus = "degraded";
         })
     );
 
     if (input.mediaType === "image" && heatmapRelPath) {
       try {
+        const tHeatmapStart = Date.now();
         const heatmapBuffer = generateForensicHeatmapPng(input.buffer, verdict, confidence);
+        console.log(`[ForensicEngine ${caseId}] ELA anomaly heatmap generated in ${Date.now() - tHeatmapStart}ms (${heatmapBuffer.length} bytes)`);
+
         uploadTasks.push(
           supabaseServer.storage
             .from("evidence-vault")
@@ -457,24 +468,33 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
               upsert: true,
             })
             .catch((heatmapErr) => {
-              console.warn("Heatmap upload to Supabase storage vault notice:", heatmapErr);
+              console.warn(`[ForensicEngine ${caseId}] Heatmap vault upload notice:`, heatmapErr);
+              storageStatus = "degraded";
             })
         );
       } catch (err) {
-        console.warn("Heatmap buffer synthesis notice:", err);
+        console.warn(`[ForensicEngine ${caseId}] Heatmap buffer synthesis notice:`, err);
       }
     }
 
     // Race uploads with a fast 2.0s bounded window so slow storage networks never stall the user
-    await Promise.race([
+    const uploadOutcome = await Promise.race([
       Promise.allSettled(uploadTasks),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
+      new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), 2000)),
     ]);
+
+    if (uploadOutcome === "TIMEOUT") {
+      storageStatus = "degraded";
+      console.warn(`[ForensicEngine ${caseId}] Vault uploads timed out after 2000ms; marked degraded.`);
+    } else {
+      console.log(`[ForensicEngine ${caseId}] Vault upload tasks completed in ${Date.now() - tStorageStart}ms`);
+    }
   }
 
   const publicEvidenceUrl = `${supabaseStorageBase}/${storageRelPath}`;
   const publicHeatmapUrl = heatmapRelPath ? `${supabaseStorageBase}/${heatmapRelPath}` : null;
 
+  let dbStatus = "synced";
   const caseRecord: CaseRecord = {
     id: caseId,
     case_number: caseNumber,
@@ -517,6 +537,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
 
   // 3. Persist into Supabase Realtime Database (cases table) and Audit Logs
   try {
+    const tDbStart = Date.now();
     const dbTasks = [
       supabaseServer.from("cases").insert({
         id: caseRecord.id,
@@ -569,13 +590,26 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
       }),
     ];
 
-    await Promise.race([
+    const dbOutcome = await Promise.race([
       Promise.allSettled(dbTasks),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
+      new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), 2500)),
     ]);
+
+    if (dbOutcome === "TIMEOUT") {
+      dbStatus = "degraded";
+      console.warn(`[ForensicEngine ${caseId}] DB persistence timed out after 2500ms; marked degraded.`);
+    } else {
+      console.log(`[ForensicEngine ${caseId}] DB persistence completed in ${Date.now() - tDbStart}ms`);
+    }
   } catch (dbErr) {
-    console.warn("Supabase persistence warning in analysisEngineServer:", dbErr);
+    dbStatus = "degraded";
+    console.warn(`[ForensicEngine ${caseId}] Supabase persistence warning:`, dbErr);
   }
 
+  if (storageStatus === "degraded" || dbStatus === "degraded") {
+    caseRecord.limitations_notes += " [Persistence: degraded/offline mode]";
+  }
+
+  console.log(`[ForensicEngine ${caseId}] Overall examination completed in ${Date.now() - engineStartTime}ms (Status: ${storageStatus === "degraded" || dbStatus === "degraded" ? "degraded" : "synced"})`);
   return caseRecord;
 }

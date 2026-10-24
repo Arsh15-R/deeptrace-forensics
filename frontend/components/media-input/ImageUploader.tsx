@@ -87,6 +87,9 @@ export const ImageUploader: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[DeepTrace Client] Operator cancelled image examination.");
+    }
     userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
@@ -111,64 +114,86 @@ export const ImageUploader: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Strict 60-second client-side timeout wired to abort controller
+    const timeoutId = setTimeout(() => {
+      if (!userCancelledRef.current) {
+        controller.abort(new DOMException("Analysis timed out after 60 seconds.", "TimeoutError"));
+      }
+    }, 60000);
+    timersRef.current.push(timeoutId);
+
     setLoading(true);
     setError(null);
 
-    // Stage 1: File Ingestion & Cryptographic Integrity Check
-    setProgress(25);
-    setProgressLabel("Validating image container & computing SHA-256 fingerprint...");
-    setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
-
-    let currentHash = sha256;
-    if (!currentHash) {
-      try {
-        currentHash = await computeClientSHA256(file);
-        setSha256(currentHash);
-      } catch {}
-    }
-
-    if (userCancelledRef.current || controller.signal.aborted) {
-      setLoading(false);
-      return;
-    }
-
-    // Stage 2: Evidence Transmission & Model Inference
-    setProgress(60);
-    setProgressLabel("Evaluating multi-spectral sensor noise, Bayer CFA & latent biometrics...");
-    setProgressDetail("Stage 2 of 4: Multi-Spectral Frequency & Spatial Decomposition");
-
-    // Dynamic intermediate milestones ensure smooth progress and avoid stalling visually
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(75);
-          setProgressLabel("Extracting spatial Bayer CFA & VAE latent distributions...");
-          setProgressDetail("Stage 3 of 4: Spatial Texture & Frequency Domain Analysis");
-        }
-      }, 400)
-    );
-
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(88);
-          setProgressLabel("Computing thermal error level analysis & sensor PRNU variance...");
-          setProgressDetail("Stage 3 of 4: Synthesis Confidence Verification");
-        }
-      }, 1000)
-    );
-
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(94);
-          setProgressLabel("Calibrating Neyman-Pearson decision boundary & signing audit record...");
-          setProgressDetail("Stage 4 of 4: Finalizing Certified Forensic Dossier");
-        }
-      }, 1800)
-    );
-
     try {
+      // Stage 1: File Ingestion & Cryptographic Integrity Check
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Stage 1: Ingesting "${file.name}" (${formatBytes(file.size)})`);
+      }
+      setProgress(25);
+      setProgressLabel("Validating image container & computing SHA-256 fingerprint...");
+      setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
+
+      let currentHash = sha256;
+      if (!currentHash) {
+        try {
+          currentHash = await computeClientSHA256(file);
+          setSha256(currentHash);
+        } catch {}
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Stage 1: SHA-256 verified: ${currentHash || "uncomputed"}`);
+      }
+
+      if (userCancelledRef.current || controller.signal.aborted) {
+        setLoading(false);
+        return;
+      }
+
+      // Stage 2: Evidence Transmission & Model Inference
+      setProgress(60);
+      setProgressLabel("Evaluating multi-spectral sensor noise, Bayer CFA & latent biometrics...");
+      setProgressDetail("Stage 2 of 4: Multi-Spectral Frequency & Spatial Decomposition");
+
+      // Dynamic intermediate milestones advance up to 94% maximum, then hold for server response
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(75);
+            setProgressLabel("Extracting spatial Bayer CFA & VAE latent distributions...");
+            setProgressDetail("Stage 3 of 4: Spatial Texture & Frequency Domain Analysis");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Stage 2.1: Progress 75%");
+          }
+        }, 400)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(88);
+            setProgressLabel("Computing thermal error level analysis & sensor PRNU variance...");
+            setProgressDetail("Stage 3 of 4: Synthesis Confidence Verification");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Stage 2.2: Progress 88%");
+          }
+        }, 1000)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(94);
+            setProgressLabel("Calibrating Neyman-Pearson decision boundary & signing audit record...");
+            setProgressDetail("Stage 4 of 4: Awaiting final verification...");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Stage 2.3: Progress 94% (holding until server response)");
+          }
+        }, 1800)
+      );
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[DeepTrace Client] Stage 2: Dispatching POST /api/cases/analyze/image...");
+      }
+
       const result = await analyzeImage(file, caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
 
@@ -177,29 +202,41 @@ export const ImageUploader: React.FC = () => {
         return;
       }
 
-      // Cache preview in sessionStorage for instant result presentation
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}, Confidence: ${result.calibrated_confidence}%`);
+      }
+
+      // Cache small thumbnail in sessionStorage safely (capped at 256 KB to prevent QuotaExceededError)
       try {
-        if (file && file.size < 4 * 1024 * 1024) {
+        if (file && file.size < 256 * 1024) {
           const reader = new FileReader();
           reader.onload = () => {
             try {
               if (typeof reader.result === "string") {
                 sessionStorage.setItem(`evidence_preview_${result.id}`, reader.result);
               }
-            } catch {}
+            } catch (storageErr) {
+              console.warn("[DeepTrace Client] Preview sessionStorage quota reached, skipping cache:", storageErr);
+            }
           };
           reader.readAsDataURL(file);
         }
-      } catch {}
+      } catch (previewErr) {
+        console.warn("[DeepTrace Client] Local preview caching error:", previewErr);
+      }
 
-      // Stage 4: Calibration Certified & Dossier Ready
+      // Stage 4: Jump from 94% to 100% on actual verified response
       setProgress(100);
       setProgressLabel("Examination certified. Opening forensic dossier...");
       setProgressDetail("Stage 4 of 4: Neyman-Pearson Calibration Complete");
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Stage 4: Progress 100%. Transitioning to /results/${result.id}`);
+      }
+
       setTimeout(() => {
         router.push(`/results/${result.id}`);
-      }, 350);
+      }, 250);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);
@@ -208,21 +245,22 @@ export const ImageUploader: React.FC = () => {
       setProgressDetail("");
 
       if (userCancelledRef.current) {
-        // User explicitly clicked Cancel; message already set in cancelAnalysis
         return;
       }
 
-      console.error("Image analysis error:", err);
+      console.error("[DeepTrace Client] Image examination failed:", err);
       const isTimeout =
         err?.name === "TimeoutError" ||
         err?.message?.includes("timed out") ||
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Analysis request timed out. The examination engine did not complete within the required time window."
+        ? "Analysis request timed out after 60 seconds. The examination engine did not complete within the required window."
         : (err?.message || "Failed to analyze image evidence. Engine error or network connection lost.");
 
       setError(errorMessage);
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 

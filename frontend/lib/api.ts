@@ -19,7 +19,7 @@ async function getHeaders(extra: Record<string, string> = {}): Promise<Record<st
   return headers;
 }
 
-function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 25000): AbortSignal {
+function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 60000): AbortSignal {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort(new DOMException("Analysis request timed out after " + Math.round(timeoutMs / 1000) + " seconds.", "TimeoutError"));
@@ -40,6 +40,31 @@ function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 25000): Abort
   return controller.signal;
 }
 
+async function parseApiResponse<T>(res: Response, fallbackMessage: string): Promise<T> {
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    let errorDetail = fallbackMessage;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.detail) errorDetail = parsed.detail;
+      else if (parsed.message) errorDetail = parsed.message;
+    } catch {
+      if (text && text.length < 250 && !text.includes("<html")) {
+        errorDetail = text;
+      } else {
+        errorDetail = `${fallbackMessage} (HTTP ${res.status})`;
+      }
+    }
+    throw new Error(errorDetail);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("Invalid response format received from forensic server. Expected JSON.");
+  }
+}
+
 export async function analyzeImage(
   file: File,
   caseRef?: string,
@@ -54,15 +79,10 @@ export async function analyzeImage(
     method: "POST",
     headers,
     body: formData,
-    signal: createRequestSignal(signal, 35000),
+    signal: createRequestSignal(signal, 60000),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Analysis failed" }));
-    throw new Error(errorData.detail || `Server responded with ${res.status}`);
-  }
-
-  return res.json();
+  return parseApiResponse<CaseRecord>(res, "Image analysis failed");
 }
 
 export async function analyzeVideo(
@@ -79,15 +99,10 @@ export async function analyzeVideo(
     method: "POST",
     headers,
     body: formData,
-    signal: createRequestSignal(signal, 45000),
+    signal: createRequestSignal(signal, 60000),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Video analysis failed" }));
-    throw new Error(errorData.detail || `Server responded with ${res.status}`);
-  }
-
-  return res.json();
+  return parseApiResponse<CaseRecord>(res, "Video analysis failed");
 }
 
 export async function analyzeAudio(
@@ -104,15 +119,10 @@ export async function analyzeAudio(
     method: "POST",
     headers,
     body: formData,
-    signal: createRequestSignal(signal, 35000),
+    signal: createRequestSignal(signal, 60000),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Audio analysis failed" }));
-    throw new Error(errorData.detail || `Server responded with ${res.status}`);
-  }
-
-  return res.json();
+  return parseApiResponse<CaseRecord>(res, "Audio analysis failed");
 }
 
 export async function analyzeLink(
@@ -125,15 +135,10 @@ export async function analyzeLink(
     method: "POST",
     headers,
     body: JSON.stringify({ url, case_reference: caseRef }),
-    signal: createRequestSignal(signal, 30000),
+    signal: createRequestSignal(signal, 60000),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Link ingestion failed" }));
-    throw new Error(errorData.detail || `Server responded with ${res.status}`);
-  }
-
-  return res.json();
+  return parseApiResponse<CaseRecord>(res, "Link ingestion failed");
 }
 
 export async function analyzeText(
@@ -146,15 +151,10 @@ export async function analyzeText(
     method: "POST",
     headers,
     body: JSON.stringify({ text, case_reference: caseRef }),
-    signal: createRequestSignal(signal, 25000),
+    signal: createRequestSignal(signal, 60000),
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Text analysis failed" }));
-    throw new Error(errorData.detail || `Server responded with ${res.status}`);
-  }
-
-  return res.json();
+  return parseApiResponse<CaseRecord>(res, "Text analysis failed");
 }
 
 // Unified Detection API

@@ -83,6 +83,9 @@ export const AudioUploader: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[DeepTrace Client] Operator cancelled voice analysis.");
+    }
     userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
@@ -107,62 +110,85 @@ export const AudioUploader: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Strict 60-second client-side timeout wired to abort controller
+    const timeoutId = setTimeout(() => {
+      if (!userCancelledRef.current) {
+        controller.abort(new DOMException("Audio analysis timed out after 60 seconds.", "TimeoutError"));
+      }
+    }, 60000);
+    timersRef.current.push(timeoutId);
+
     setLoading(true);
     setError(null);
 
-    // Stage 1: File Ingestion & Cryptographic Check
-    setProgress(25);
-    setProgressLabel("Computing audio SHA-256 & streaming waveform...");
-    setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
-
-    if (!sha256) {
-      try {
-        const hash = await computeClientSHA256(file);
-        setSha256(hash);
-      } catch {}
-    }
-
-    if (userCancelledRef.current || controller.signal.aborted) {
-      setLoading(false);
-      return;
-    }
-
-    // Stage 2: STFT & Neural Vocoder Acoustic Evaluation
-    setProgress(60);
-    setProgressLabel("Evaluating spectral bandwidth, vocoder harmonics & vocal prosody...");
-    setProgressDetail("Stage 2 of 4: Mel-Frequency Filterbank & Glottal Dynamics");
-
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(75);
-          setProgressLabel("Computing bispectral higher-order phase & spectral centroid...");
-          setProgressDetail("Stage 3 of 4: Acoustic Phase Linearity & Formant Tracking");
-        }
-      }, 400)
-    );
-
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(88);
-          setProgressLabel("Cross-referencing neural text-to-speech vocoder artifacts...");
-          setProgressDetail("Stage 3 of 4: Synthetic Resynthesis Pattern Detection");
-        }
-      }, 1000)
-    );
-
-    timersRef.current.push(
-      setTimeout(() => {
-        if (!userCancelledRef.current) {
-          setProgress(94);
-          setProgressLabel("Calibrating audio likelihood ratio & cryptographic sign-off...");
-          setProgressDetail("Stage 4 of 4: Certified Acoustic Dossier Assembly");
-        }
-      }, 1800)
-    );
-
     try {
+      // Stage 1: File Ingestion & Cryptographic Check
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Audio Stage 1: Ingesting "${file.name}" (${formatBytes(file.size)})`);
+      }
+      setProgress(25);
+      setProgressLabel("Computing audio SHA-256 & streaming waveform...");
+      setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
+
+      let currentHash = sha256;
+      if (!currentHash) {
+        try {
+          currentHash = await computeClientSHA256(file);
+          setSha256(currentHash);
+        } catch {}
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Audio Stage 1: SHA-256 verified: ${currentHash || "uncomputed"}`);
+      }
+
+      if (userCancelledRef.current || controller.signal.aborted) {
+        setLoading(false);
+        return;
+      }
+
+      // Stage 2: STFT & Neural Vocoder Acoustic Evaluation
+      setProgress(60);
+      setProgressLabel("Evaluating spectral bandwidth, vocoder harmonics & vocal prosody...");
+      setProgressDetail("Stage 2 of 4: Mel-Frequency Filterbank & Glottal Dynamics");
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(75);
+            setProgressLabel("Computing bispectral higher-order phase & spectral centroid...");
+            setProgressDetail("Stage 3 of 4: Acoustic Phase Linearity & Formant Tracking");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Audio Stage 2.1: Progress 75%");
+          }
+        }, 400)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(88);
+            setProgressLabel("Cross-referencing neural text-to-speech vocoder artifacts...");
+            setProgressDetail("Stage 3 of 4: Synthetic Resynthesis Pattern Detection");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Audio Stage 2.2: Progress 88%");
+          }
+        }, 1000)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(94);
+            setProgressLabel("Calibrating audio likelihood ratio & cryptographic sign-off...");
+            setProgressDetail("Stage 4 of 4: Awaiting final verification...");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Audio Stage 2.3: Progress 94% (holding until server response)");
+          }
+        }, 1800)
+      );
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[DeepTrace Client] Audio Stage 2: Dispatching POST /api/cases/analyze/audio...");
+      }
+
       const record = await analyzeAudio(file, caseRef || undefined, controller.signal);
       cleanupTimers();
 
@@ -171,13 +197,21 @@ export const AudioUploader: React.FC = () => {
         return;
       }
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Audio Stage 3: Received record: ${record.case_number}, Verdict: ${record.verdict}`);
+      }
+
       setProgress(100);
       setProgressLabel("Voice authenticity certified. Opening dossier...");
       setProgressDetail("Stage 4 of 4: Synthetic Vocoder Calibration Finished");
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Audio Stage 4: Progress 100%. Transitioning to /results/${record.id}`);
+      }
+
       setTimeout(() => {
         router.push(`/results/${record.id}`);
-      }, 350);
+      }, 250);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);
@@ -189,17 +223,19 @@ export const AudioUploader: React.FC = () => {
         return;
       }
 
-      console.error("Audio analysis error:", err);
+      console.error("[DeepTrace Client] Audio analysis error:", err);
       const isTimeout =
         err?.name === "TimeoutError" ||
         err?.message?.includes("timed out") ||
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Audio analysis request timed out. The acoustic examination engine did not complete in time."
+        ? "Audio analysis request timed out after 60 seconds. The acoustic examination engine did not complete in time."
         : (err?.message || "Failed to analyze audio evidence. Engine error or network connection lost.");
 
       setError(errorMessage);
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
