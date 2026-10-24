@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Loader2, Check } from "lucide-react";
+import { AlertCircle, Loader2, Check, RefreshCw, XCircle, FileImage } from "lucide-react";
 import { analyzeImage } from "@/lib/api";
 import { computeClientSHA256, formatBytes, truncateHash } from "@/lib/utils";
 import { LoadingBar } from "@/components/ui/LoadingBar";
@@ -10,6 +10,8 @@ import { LoadingBar } from "@/components/ui/LoadingBar";
 export const ImageUploader: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -26,8 +28,25 @@ export const ImageUploader: React.FC = () => {
   const MAX_SIZE = 50 * 1024 * 1024; // 50MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff"];
 
+  const cleanupTimers = () => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanupTimers();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleFile = async (selected: File) => {
     setError(null);
+    cleanupTimers();
 
     if (!ALLOWED_TYPES.includes(selected.type)) {
       setError(`Format '${selected.type || "unknown"}' is not supported. Use JPEG, PNG, WebP, or TIFF.`);
@@ -43,7 +62,6 @@ export const ImageUploader: React.FC = () => {
     const objectUrl = URL.createObjectURL(selected);
     setPreviewUrl(objectUrl);
 
-    // Compute client-side SHA-256 immediately upon drop
     try {
       const hash = await computeClientSHA256(selected);
       setSha256(hash);
@@ -69,42 +87,87 @@ export const ImageUploader: React.FC = () => {
     }
   };
 
+  const cancelAnalysis = useCallback(() => {
+    cleanupTimers();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+    setProgress(0);
+    setProgressLabel("");
+    setProgressDetail("");
+    setError("Analysis was cancelled by operator.");
+  }, []);
+
   const handleAnalyze = async () => {
     if (!file) return;
+
+    // Reset state & create new AbortController
+    cleanupTimers();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError(null);
-    setProgress(15);
-    setProgressLabel("Computing cryptographic SHA-256 hash & uploading...");
+
+    // Stage 1: Real Client-side verification
+    setProgress(20);
+    setProgressLabel("Validating image container & computing SHA-256 fingerprint...");
     setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
 
-    const t1 = setTimeout(() => {
-      setProgress(45);
-      setProgressLabel("Extracting 8x8 macroblock 2D-DCT residuals & noise floor...");
-      setProgressDetail("Stage 2 of 4: Frequency Domain Decomposition");
-    }, 450);
+    // Ensure SHA-256 is present
+    let currentHash = sha256;
+    if (!currentHash) {
+      try {
+        currentHash = await computeClientSHA256(file);
+        setSha256(currentHash);
+      } catch {}
+    }
 
-    const t2 = setTimeout(() => {
-      setProgress(78);
-      setProgressLabel("Evaluating corneal reflection symmetry & MobileNetV3 entropy...");
-      setProgressDetail("Stage 3 of 4: Facial Biometrics & Latent Distribution");
-    }, 1100);
+    if (controller.signal.aborted) return;
+
+    // Stage 2: Evidence streaming
+    setProgress(45);
+    setProgressLabel("Transmitting encrypted evidence bytes to forensic engine...");
+    setProgressDetail("Stage 2 of 4: Frequency Domain Decomposition");
+
+    // Smooth incremental ticker for Stage 3 inference (caps at 90% until certified)
+    let dynamicProgress = 45;
+    progressTimerRef.current = setInterval(() => {
+      dynamicProgress = Math.min(88, dynamicProgress + 3);
+      setProgress(dynamicProgress);
+      if (dynamicProgress >= 70) {
+        setProgressLabel("Evaluating multi-spectral sensor noise & MobileNetV3 biometrics...");
+        setProgressDetail("Stage 3 of 4: Facial Biometrics & Latent Distribution");
+      }
+    }, 400);
 
     try {
-      const result = await analyzeImage(file, caseRef.trim() || undefined);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      const result = await analyzeImage(file, caseRef.trim() || undefined, controller.signal);
+      cleanupTimers();
+
       setProgress(100);
       setProgressLabel("Examination certified. Opening forensic dossier...");
       setProgressDetail("Stage 4 of 4: Neyman-Pearson Calibration Complete");
+
       setTimeout(() => {
         router.push(`/results/${result.id}`);
-      }, 350);
+      }, 400);
     } catch (err: any) {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      setError(err.message || "Failed to analyze image evidence.");
+      cleanupTimers();
+      if (err.name === "AbortError" || controller.signal.aborted) {
+        return; // Handled by cancelAnalysis
+      }
+      console.error("Image analysis error:", err);
+      setError(err?.message || "Failed to analyze image evidence. Network or engine timeout.");
       setLoading(false);
       setProgress(0);
+      setProgressLabel("");
+      setProgressDetail("");
     }
   };
 
@@ -122,12 +185,12 @@ export const ImageUploader: React.FC = () => {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !loading && fileInputRef.current?.click()}
         className={`relative border-2 border-dashed rounded-panel p-8 sm:p-12 text-center cursor-pointer transition-all duration-150 ${
           dragActive
             ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 scale-[0.99]"
             : "border-neutral-300 dark:border-neutral-700/80 hover:border-neutral-400 dark:hover:border-neutral-600 bg-white/40 dark:bg-slate-900/40"
-        }`}
+        } ${loading ? "opacity-75 pointer-events-none" : ""}`}
       >
         <input
           ref={fileInputRef}
@@ -143,7 +206,7 @@ export const ImageUploader: React.FC = () => {
 
         {previewUrl ? (
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-            <div className="relative w-32 h-32 rounded-subpanel overflow-hidden border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 flex-shrink-0">
+            <div className="relative w-32 h-32 rounded-subpanel overflow-hidden border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 flex-shrink-0 shadow-xs">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewUrl}
@@ -169,7 +232,7 @@ export const ImageUploader: React.FC = () => {
                       e.stopPropagation();
                       copyHash();
                     }}
-                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-bold px-3 py-1 min-h-[44px] rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 active:scale-[0.97] transition-transform duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 inline-flex items-center"
+                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-bold px-3 py-1 min-h-[44px] rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 active:scale-[0.97] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 inline-flex items-center"
                   >
                     {hashCopied ? "Copied" : "Copy hash"}
                   </button>
@@ -182,6 +245,9 @@ export const ImageUploader: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-col items-center">
+            <div className="w-12 h-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-400 mb-2 flex items-center justify-center">
+              <FileImage className="w-6 h-6" />
+            </div>
             <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
               Drop image evidence here or click to browse
             </p>
@@ -198,31 +264,52 @@ export const ImageUploader: React.FC = () => {
           <input
             type="text"
             value={caseRef}
+            disabled={loading}
             onChange={(e) => setCaseRef(e.target.value)}
             placeholder="Case Reference / Incident Number (optional, e.g. CASE-2026-0418)"
-            className="w-full px-4 py-2 min-h-[44px] rounded-input bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full px-4 py-2 min-h-[44px] rounded-input bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-60"
           />
         </div>
 
-        <button
-          onClick={handleAnalyze}
-          disabled={!file || loading}
-          className="w-full sm:w-1/3 py-2 px-6 min-h-[44px] rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm active:scale-[0.97] transition-transform duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none flex items-center justify-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-        >
+        <div className="w-full sm:w-1/3 flex items-center gap-2">
           {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Analyzing...</span>
-            </>
+            <button
+              type="button"
+              onClick={cancelAnalysis}
+              className="w-full py-2 px-4 min-h-[44px] rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs active:scale-[0.97] transition-all flex items-center justify-center space-x-2 shadow-xs"
+            >
+              <XCircle className="w-4 h-4" />
+              <span>Cancel Analysis</span>
+            </button>
           ) : (
-            <span>Analyze</span>
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              disabled={!file}
+              className="w-full py-2 px-6 min-h-[44px] rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm active:scale-[0.97] transition-all flex items-center justify-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-xs"
+            >
+              <span>Analyze Image Evidence</span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Forensic Loading Progress Bar */}
       {loading && (
-        <div className="p-4 rounded-input border border-blue-500/30 bg-blue-50/60 dark:bg-blue-950/30 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-50/70 dark:bg-blue-950/40 backdrop-blur-sm space-y-3 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              Forensic Neural Pipeline Active
+            </span>
+            <button
+              type="button"
+              onClick={cancelAnalysis}
+              className="text-[11px] font-bold text-red-600 hover:text-red-700 dark:text-red-400 underline"
+            >
+              Cancel
+            </button>
+          </div>
           <LoadingBar
             progress={progress}
             label={progressLabel}
@@ -233,11 +320,38 @@ export const ImageUploader: React.FC = () => {
         </div>
       )}
 
-      {/* Error Banner */}
-      {error && (
-        <div className="rounded-input p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start space-x-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+      {/* Error Banner with Retry */}
+      {error && !loading && (
+        <div className="rounded-xl p-4 bg-red-50/90 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs space-y-2.5">
+          <div className="flex items-start space-x-2.5">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+            <div className="flex-1 space-y-0.5">
+              <p className="font-bold">Examination Notice</p>
+              <p className="text-[11px] leading-relaxed">{error}</p>
+            </div>
+          </div>
+          <div className="pl-6 pt-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 min-h-[32px] rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold active:scale-[0.97] transition-all shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Analysis</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setFile(null);
+                setPreviewUrl(null);
+                setSha256(null);
+              }}
+              className="text-xs text-neutral-600 dark:text-neutral-400 hover:underline px-2 py-1"
+            >
+              Choose different file
+            </button>
+          </div>
         </div>
       )}
     </div>

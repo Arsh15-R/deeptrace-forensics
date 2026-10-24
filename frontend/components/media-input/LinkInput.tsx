@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Link as LinkIcon, AlertCircle, Loader2 } from "lucide-react";
+import { Globe, AlertCircle, Loader2, Link as LinkIcon, RefreshCw, XCircle } from "lucide-react";
 import { analyzeLink } from "@/lib/api";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
 export const LinkInput: React.FC = () => {
   const router = useRouter();
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [url, setUrl] = useState<string>("");
   const [caseRef, setCaseRef] = useState<string>("");
@@ -17,51 +19,88 @@ export const LinkInput: React.FC = () => {
   const [progressDetail, setProgressDetail] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const cleanupTimers = () => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanupTimers();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const cancelAnalysis = useCallback(() => {
+    cleanupTimers();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+    setProgress(0);
+    setProgressLabel("");
+    setProgressDetail("");
+    setError("Remote link examination was cancelled by operator.");
+  }, []);
+
+  const handleAnalyze = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!url.trim()) return;
 
-    setError(null);
-
-    // Quick client-side check
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      setError("Please provide a complete URL beginning with https:// or http://");
+    try {
+      new URL(url.trim());
+    } catch {
+      setError("Please provide a valid, well-formed URL (e.g. https://domain.org/evidence.jpg).");
       return;
     }
 
+    cleanupTimers();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
+    setError(null);
     setProgress(20);
     setProgressLabel("Evaluating URL destination & SSRF isolation...");
     setProgressDetail("Stage 1 of 4: DNS Resolution & Private Subnet Guard");
 
-    const t1 = setTimeout(() => {
-      setProgress(50);
-      setProgressLabel("Streaming remote binary container & hashing...");
-      setProgressDetail("Stage 2 of 4: Media Header & Payload Validation");
-    }, 450);
-
-    const t2 = setTimeout(() => {
-      setProgress(80);
-      setProgressLabel("Running multimodal forensic sensor artifact analysis...");
-      setProgressDetail("Stage 3 of 4: Neural Feature & Frequency Inspection");
-    }, 1100);
+    let dynamicProgress = 20;
+    progressTimerRef.current = setInterval(() => {
+      dynamicProgress = Math.min(88, dynamicProgress + 4);
+      setProgress(dynamicProgress);
+      if (dynamicProgress >= 50) {
+        setProgressLabel("Running multimodal forensic sensor artifact analysis...");
+        setProgressDetail("Stage 3 of 4: Neural Feature & Frequency Inspection");
+      }
+    }, 400);
 
     try {
-      const result = await analyzeLink(url.trim(), caseRef.trim() || undefined);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      const result = await analyzeLink(url.trim(), caseRef.trim() || undefined, controller.signal);
+      cleanupTimers();
+
       setProgress(100);
       setProgressLabel("Remote evidence analyzed. Opening dossier...");
       setProgressDetail("Stage 4 of 4: Cryptographic Ledger Certified");
+
       setTimeout(() => {
         router.push(`/results/${result.id}`);
       }, 350);
     } catch (err: any) {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      setError(err.message || "Failed to fetch and evaluate media from the specified link.");
+      cleanupTimers();
+      if (err.name === "AbortError" || controller.signal.aborted) return;
+      setError(err?.message || "Failed to fetch and evaluate media from the specified link.");
       setLoading(false);
       setProgress(0);
+      setProgressLabel("");
+      setProgressDetail("");
     }
   };
 
@@ -78,11 +117,12 @@ export const LinkInput: React.FC = () => {
           <input
             id="remote-url-input"
             type="url"
+            disabled={loading}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://evidence-host.org/records/incident_capture.jpg"
             required
-            className="w-full pl-10 pr-4 py-2 min-h-[44px] rounded-input bg-white/70 dark:bg-slate-900/70 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 min-h-[44px] rounded-input bg-white/70 dark:bg-slate-900/70 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-60"
           />
         </div>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -96,31 +136,51 @@ export const LinkInput: React.FC = () => {
           <input
             type="text"
             value={caseRef}
+            disabled={loading}
             onChange={(e) => setCaseRef(e.target.value)}
             placeholder="Case Reference / Incident Number (optional)"
-            className="w-full px-4 py-2 min-h-[44px] rounded-input bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="w-full px-4 py-2 min-h-[44px] rounded-input bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-60"
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={!url.trim() || loading}
-          className="w-full sm:w-1/3 py-2 px-6 min-h-[44px] rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm active:scale-[0.97] transition-transform duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none flex items-center justify-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-        >
+        <div className="w-full sm:w-1/3 flex items-center gap-2">
           {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Fetching media...</span>
-            </>
+            <button
+              type="button"
+              onClick={cancelAnalysis}
+              className="w-full py-2 px-4 min-h-[44px] rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs active:scale-[0.97] transition-all flex items-center justify-center space-x-2 shadow-xs"
+            >
+              <XCircle className="w-4 h-4" />
+              <span>Cancel Analysis</span>
+            </button>
           ) : (
-            <span>Fetch and analyze</span>
+            <button
+              type="submit"
+              disabled={!url.trim()}
+              className="w-full py-2 px-6 min-h-[44px] rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm active:scale-[0.97] transition-all flex items-center justify-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-xs"
+            >
+              <span>Analyze Remote Link</span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Forensic Loading Progress Bar */}
       {loading && (
-        <div className="p-4 rounded-input border border-blue-500/30 bg-blue-50/60 dark:bg-blue-950/30 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-50/70 dark:bg-blue-950/40 backdrop-blur-sm space-y-3 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              SSRF Isolation & Artifact Engine Active
+            </span>
+            <button
+              type="button"
+              onClick={cancelAnalysis}
+              className="text-[11px] font-bold text-red-600 hover:text-red-700 dark:text-red-400 underline"
+            >
+              Cancel
+            </button>
+          </div>
           <LoadingBar
             progress={progress}
             label={progressLabel}
@@ -131,11 +191,26 @@ export const LinkInput: React.FC = () => {
         </div>
       )}
 
-      {/* Error Banner */}
-      {error && (
-        <div className="rounded-input p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start space-x-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+      {/* Error Banner with Retry */}
+      {error && !loading && (
+        <div className="rounded-xl p-4 bg-red-50/90 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs space-y-2.5">
+          <div className="flex items-start space-x-2.5">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+            <div className="flex-1 space-y-0.5">
+              <p className="font-bold">Link Ingestion Notice</p>
+              <p className="text-[11px] leading-relaxed">{error}</p>
+            </div>
+          </div>
+          <div className="pl-6 pt-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleAnalyze()}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 min-h-[32px] rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold active:scale-[0.97] transition-all shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Analysis</span>
+            </button>
+          </div>
         </div>
       )}
     </form>

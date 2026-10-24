@@ -14,7 +14,7 @@ import { VideoTimelineScrubber } from "@/components/results/VideoTimelineScrubbe
 import { AudioTimelineViewer } from "@/components/results/AudioTimelineViewer";
 import { EvidenceLedgerCard } from "@/components/results/EvidenceLedgerCard";
 import { InvestigativeNotice } from "@/components/results/InvestigativeNotice";
-import { ArrowLeft, AlertCircle } from "lucide-react";
+import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
 export default function CaseResultsPage() {
@@ -26,19 +26,35 @@ export default function CaseResultsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadCaseRecord = React.useCallback(() => {
     if (!id) return;
     setLoading(true);
-    getCase(id)
+    setError(null);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+      setError("Request timed out loading case record. Please retry.");
+      setLoading(false);
+    }, 12000);
+
+    getCase(id, controller.signal)
       .then((data) => {
+        clearTimeout(timeout);
         setCaseData(data);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message || "Failed to load case record.");
+        clearTimeout(timeout);
+        if (err.name === "AbortError") return;
+        setError(err.message || "Failed to load case record from database.");
         setLoading(false);
       });
   }, [id]);
+
+  useEffect(() => {
+    loadCaseRecord();
+  }, [loadCaseRecord]);
 
   if (loading) {
     return (
@@ -67,10 +83,18 @@ export default function CaseResultsPage() {
             Case Record Unavailable
           </h2>
           <p className="text-xs text-neutral-500">{error || "Case record not found."}</p>
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-center space-x-3">
+            <button
+              type="button"
+              onClick={loadCaseRecord}
+              className="inline-flex items-center space-x-2 px-4 py-2 min-h-[44px] rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold active:scale-[0.97] transition-all shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Load</span>
+            </button>
             <Link
               href="/"
-              className="inline-flex items-center space-x-2 px-5 py-2 min-h-[44px] rounded-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-bold active:scale-[0.97] transition-transform duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex items-center space-x-2 px-5 py-2 min-h-[44px] rounded-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-bold active:scale-[0.97] transition-transform duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Return to Media Screening</span>
