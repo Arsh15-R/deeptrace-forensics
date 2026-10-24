@@ -4,6 +4,7 @@ import path from "node:path";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { generateForensicHeatmapPng } from "@/lib/heatmapServer";
 import { analyzeImageForensics } from "@/lib/imageForensicsServer";
+import { analyzeAudioForensics } from "@/lib/audioForensicsServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
 export interface AnalysisInput {
@@ -265,98 +266,16 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // MODALITY 3: AUDIO FORENSICS
   // =========================================================================
   else if (input.mediaType === "audio" && input.buffer) {
-    const rawHead = input.buffer.subarray(0, Math.min(input.buffer.length, 65536)).toString("latin1");
-    const hasTtsMarkers =
-      /elevenlabs|tortoise|bark|vits|tacotron|fastspeech|rvc|so-vits|chattts|xtts|openvoice|fish-audio|play\.ht|murf|descript|wellsaid|speechify|resemble|voice-ai|ai-voice|ai_voice|originalvo|gamer-voice|shortfilm-voice|female-voice|voice-good-morning/i.test(
-        rawHead
-      ) ||
-      /originalvo|gamer-voice|shortfilm-voice|female-voice|good-morning|elevenlabs|tortoise|bark|vits|xtts|chattts|ai-voice/i.test(
-        lowerName
-      );
-
-    // Scan MP3/MPEG header sync frame for sample rate
-    let detectedSampleRate = 44100;
-    for (let i = 0; i < Math.min(input.buffer.length - 4, 8192); i++) {
-      if (input.buffer[i] === 0xff && (input.buffer[i + 1] & 0xe0) === 0xe0) {
-        const ver = (input.buffer[i + 1] >> 3) & 3;
-        const srIdx = (input.buffer[i + 2] >> 2) & 3;
-        const srTable =
-          ver === 3
-            ? [44100, 48000, 32000]
-            : ver === 2
-            ? [22050, 24000, 16000]
-            : [11025, 12000, 8000];
-        detectedSampleRate = srTable[srIdx] || 44100;
-        break;
-      }
-    }
-
-    const isNeuralSampleRate =
-      detectedSampleRate === 24000 || detectedSampleRate === 22050 || detectedSampleRate === 16000;
-
-    // Calculate digital silence zero ratio
-    let zeroByteCount = 0;
-    const sampleLimit = Math.min(input.buffer.length, 100000);
-    for (let i = 0; i < sampleLimit; i++) {
-      if (input.buffer[i] === 0) zeroByteCount++;
-    }
-    const zeroRatio = zeroByteCount / sampleLimit;
-
-    if (hasTtsMarkers || isNeuralSampleRate || zeroRatio > 0.08) {
-      verdict = "likely_ai_generated";
-      confidence = hasTtsMarkers ? 92.0 : isNeuralSampleRate ? 85.0 : 80.0;
-      audioScore = confidence;
-      pixelScore = confidence;
-      lightingScore = 50.0;
-      metadataScore = hasTtsMarkers ? 90.0 : 82.0;
-      breakdown.push({
-        name: "Neural Vocoder Acoustic Decimation & Modulation",
-        category: "audio_spectral",
-        score: audioScore,
-        weight: 0.5,
-        flagged: true,
-        status: "Synthetic Speech Pipeline",
-        detail: hasTtsMarkers
-          ? "Acoustic fingerprint and container metadata match synthetic neural voice pipeline generation."
-          : isNeuralSampleRate
-          ? `Audio stream encoded at native ${detectedSampleRate} Hz neural vocoder sample rate with upper-shelf Nyquist brickwall truncation.`
-          : `Mathematical digital silence gating (${(zeroRatio * 100).toFixed(1)}% zero bytes) violates physical room acoustics, confirming neural TTS synthesis.`,
-      });
-      breakdown.push({
-        name: "Vocoder Frame Hop & Envelope Coherence",
-        category: "pixel_patterns",
-        score: audioScore,
-        weight: 0.35,
-        flagged: true,
-        status: "Discrete Vocoder Stepping",
-        detail: "Periodic sub-band amplitude envelope modulation detected matching neural vocoder frame stepping strides (75-115 Hz).",
-      });
-    } else {
-      verdict = "likely_authentic";
-      confidence = 18.0; // Low synthetic risk index
-      audioScore = 16.5;
-      pixelScore = 15.0;
-      lightingScore = 50.0;
-      metadataScore = 15.0;
-      breakdown.push({
-        name: "Natural Acoustic Room Tone & Prosody",
-        category: "audio_spectral",
-        score: 16.5,
-        weight: 0.5,
-        flagged: false,
-        status: "Continuous Acoustic Noise Floor",
-        detail: "Speech track exhibits natural acoustic room reverberation, respiratory pauses, and organic dynamic inflections.",
-      });
-      breakdown.push({
-        name: "Microphone Transducer Physics",
-        category: "pixel_patterns",
-        score: 15.0,
-        weight: 0.3,
-        flagged: false,
-        status: "Physical Recording Hardware",
-        detail: "Continuous ambient dither and microphone transducer frequency response conform to authentic capture.",
-      });
-    }
+    const tAudStart = Date.now();
+    const audAnalysis = analyzeAudioForensics(input.buffer, input.filename);
+    verdict = audAnalysis.verdict;
+    confidence = audAnalysis.confidence;
+    audioScore = audAnalysis.audioScore;
+    pixelScore = audAnalysis.pixelScore;
+    lightingScore = audAnalysis.lightingScore;
+    metadataScore = audAnalysis.metadataScore;
+    breakdown.push(...audAnalysis.breakdown);
+    console.log(`[ForensicEngine ${caseId}] Audio forensic analysis completed in ${Date.now() - tAudStart}ms: ${verdict} (${confidence}%)`);
   }
 
   // =========================================================================
