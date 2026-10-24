@@ -72,6 +72,18 @@ export async function computeClientSHA256(file: File): Promise<string> {
 
 const SUPABASE_STORAGE_VAULT = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
 
+/**
+ * Resolves an API path against NEXT_PUBLIC_API_URL if configured,
+ * otherwise falling back to same-origin relative URLs.
+ */
+export function apiUrl(path: string): string {
+  const base = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!base) return path;
+  const cleanBase = base.replace(/\/+$/, "");
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+}
+
 export function resolveMediaUrl(url?: string | null): string {
   if (!url) return "";
   const trimmed = url.trim();
@@ -89,6 +101,10 @@ export function resolveMediaUrl(url?: string | null): string {
   if (trimmed.startsWith("/evidence/") || trimmed.startsWith("/heatmaps/")) {
     return `${SUPABASE_STORAGE_VAULT}${trimmed}`;
   }
-  // Return same-origin Next.js API path for /api/media/...
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  // Return resolved API path for /api/media/...
+  const clean = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  if (clean.startsWith("/api/")) {
+    return apiUrl(clean);
+  }
+  return clean;
 }

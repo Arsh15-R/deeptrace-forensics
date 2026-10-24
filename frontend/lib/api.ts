@@ -1,9 +1,36 @@
 import { CaseRecord, AuditLogRecord, StandardizedAnalysisResult, AdminUserRecord, UserRole } from "./types";
 import { getAuthToken, supabase } from "./supabaseClient";
+import { apiUrl } from "./utils";
 
-// Client-side API calls always use same-origin relative URLs ("") to hit Next.js API routes,
-// ensuring requests never stall or fail due to offline backend ports or CORS constraints.
-const API_BASE = "";
+export { apiUrl };
+
+/**
+ * Lightweight health verification against /api/health.
+ * Detects offline laptop server / Cloudflare tunnel early before large uploads begin.
+ */
+export async function checkServerHealth(signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
+  const endpoint = apiUrl("/api/health");
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    if (signal) {
+      signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+    const res = await fetch(endpoint, {
+      method: "GET",
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+    return { ok: res.ok };
+  } catch {
+    const isRemote = Boolean(process.env.NEXT_PUBLIC_API_URL && !endpoint.startsWith("/"));
+    return {
+      ok: false,
+      error: isRemote
+        ? "Analysis server is offline. Start the laptop server and tunnel."
+        : "Forensic service is temporarily unreachable.",
+    };
+  }
+}
 
 async function getHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
   const token = await getAuthToken();
@@ -19,7 +46,7 @@ async function getHeaders(extra: Record<string, string> = {}): Promise<Record<st
   return headers;
 }
 
-function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 60000): AbortSignal {
+function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 120000): AbortSignal {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort(new DOMException("Analysis request timed out after " + Math.round(timeoutMs / 1000) + " seconds.", "TimeoutError"));
@@ -65,6 +92,20 @@ async function parseApiResponse<T>(res: Response, fallbackMessage: string): Prom
   }
 }
 
+function formatNetworkError(err: any, defaultMsg: string): Error {
+  if (err?.name === "TimeoutError" || err?.message?.includes("timed out")) {
+    return new Error("Analysis request timed out after 120 seconds. The examination engine did not complete within the required window.");
+  }
+  if (err?.name === "AbortError") {
+    return err;
+  }
+  const isRemote = Boolean(process.env.NEXT_PUBLIC_API_URL);
+  if (isRemote && (err?.name === "TypeError" || err?.message?.includes("fetch") || err?.message?.includes("NetworkError"))) {
+    return new Error("Analysis server is offline. Start the laptop server and tunnel.");
+  }
+  return err instanceof Error ? err : new Error(defaultMsg);
+}
+
 export async function analyzeImage(
   file: File,
   caseRef?: string,
@@ -75,14 +116,18 @@ export async function analyzeImage(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/cases/analyze/image`, {
-    method: "POST",
-    headers,
-    body: formData,
-    signal: createRequestSignal(signal, 60000),
-  });
+  try {
+    const res = await fetch(apiUrl("/api/cases/analyze/image"), {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: createRequestSignal(signal, 120000),
+    });
 
-  return parseApiResponse<CaseRecord>(res, "Image analysis failed");
+    return await parseApiResponse<CaseRecord>(res, "Image analysis failed");
+  } catch (err: any) {
+    throw formatNetworkError(err, "Failed to analyze image evidence.");
+  }
 }
 
 export async function analyzeVideo(
@@ -95,14 +140,18 @@ export async function analyzeVideo(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/cases/analyze/video`, {
-    method: "POST",
-    headers,
-    body: formData,
-    signal: createRequestSignal(signal, 60000),
-  });
+  try {
+    const res = await fetch(apiUrl("/api/cases/analyze/video"), {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: createRequestSignal(signal, 120000),
+    });
 
-  return parseApiResponse<CaseRecord>(res, "Video analysis failed");
+    return await parseApiResponse<CaseRecord>(res, "Video analysis failed");
+  } catch (err: any) {
+    throw formatNetworkError(err, "Failed to analyze video evidence.");
+  }
 }
 
 export async function analyzeAudio(
@@ -115,14 +164,18 @@ export async function analyzeAudio(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/cases/analyze/audio`, {
-    method: "POST",
-    headers,
-    body: formData,
-    signal: createRequestSignal(signal, 60000),
-  });
+  try {
+    const res = await fetch(apiUrl("/api/cases/analyze/audio"), {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: createRequestSignal(signal, 120000),
+    });
 
-  return parseApiResponse<CaseRecord>(res, "Audio analysis failed");
+    return await parseApiResponse<CaseRecord>(res, "Audio analysis failed");
+  } catch (err: any) {
+    throw formatNetworkError(err, "Failed to analyze audio evidence.");
+  }
 }
 
 export async function analyzeLink(
@@ -131,14 +184,18 @@ export async function analyzeLink(
   signal?: AbortSignal
 ): Promise<CaseRecord> {
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}/api/cases/analyze/link`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ url, case_reference: caseRef }),
-    signal: createRequestSignal(signal, 60000),
-  });
+  try {
+    const res = await fetch(apiUrl("/api/cases/analyze/link"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url, case_reference: caseRef }),
+      signal: createRequestSignal(signal, 120000),
+    });
 
-  return parseApiResponse<CaseRecord>(res, "Link ingestion failed");
+    return await parseApiResponse<CaseRecord>(res, "Link ingestion failed");
+  } catch (err: any) {
+    throw formatNetworkError(err, "Failed to analyze remote link.");
+  }
 }
 
 export async function analyzeText(
@@ -147,14 +204,18 @@ export async function analyzeText(
   signal?: AbortSignal
 ): Promise<CaseRecord> {
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}/api/cases/analyze/text`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ text, case_reference: caseRef }),
-    signal: createRequestSignal(signal, 60000),
-  });
+  try {
+    const res = await fetch(apiUrl("/api/cases/analyze/text"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text, case_reference: caseRef }),
+      signal: createRequestSignal(signal, 120000),
+    });
 
-  return parseApiResponse<CaseRecord>(res, "Text analysis failed");
+    return await parseApiResponse<CaseRecord>(res, "Text analysis failed");
+  } catch (err: any) {
+    throw formatNetworkError(err, "Failed to analyze text corpus.");
+  }
 }
 
 // Unified Detection API
@@ -182,7 +243,7 @@ export async function submitAnalysisJob(
   }
 
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/analysis/jobs`, {
+  const res = await fetch(apiUrl("/api/analysis/jobs"), {
     method: "POST",
     headers,
     body: formData,
@@ -208,7 +269,7 @@ export async function getAnalysisJobStatus(
   mediaType: string;
 }> {
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/analysis/jobs/${jobId}`, {
+  const res = await fetch(apiUrl(`/api/analysis/jobs/${jobId}`), {
     headers,
     signal: createRequestSignal(signal, 15000),
   });
@@ -222,7 +283,7 @@ export async function getAnalysisJobStatus(
 
 export async function getAnalysisJobResult(jobId: string): Promise<StandardizedAnalysisResult> {
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/analysis/jobs/${jobId}/result`, {
+  const res = await fetch(apiUrl(`/api/analysis/jobs/${jobId}/result`), {
     headers,
   });
 
@@ -236,7 +297,7 @@ export async function getAnalysisJobResult(jobId: string): Promise<StandardizedA
 
 export async function getPipelineBenchmark(): Promise<any> {
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/analysis/benchmark`, {
+  const res = await fetch(apiUrl("/api/analysis/benchmark"), {
     headers,
   });
   if (!res.ok) throw new Error("Benchmark unavailable");
@@ -263,11 +324,11 @@ function mapSupabaseCaseRow(row: any): CaseRecord {
 
     const resolvedMediaUrl = (row.media_url && (row.media_url.startsWith("http://") || row.media_url.startsWith("https://")))
       ? row.media_url
-      : (cleanStorage ? `${supabaseStorageBase}/${cleanStorage}` : `/api/media/evidence/${row.id}`);
+      : (cleanStorage ? `${supabaseStorageBase}/${cleanStorage}` : apiUrl(`/api/media/evidence/${row.id}`));
 
     const resolvedHeatmapUrl = (row.heatmap_url && (row.heatmap_url.startsWith("http://") || row.heatmap_url.startsWith("https://")))
       ? row.heatmap_url
-      : (cleanHeatmap ? `${supabaseStorageBase}/${cleanHeatmap}` : (row.media_type === "image" ? `/api/media/heatmap/${row.id}` : null));
+      : (cleanHeatmap ? `${supabaseStorageBase}/${cleanHeatmap}` : (row.media_type === "image" ? apiUrl(`/api/media/heatmap/${row.id}`) : null));
 
     return {
       id: row.id,
@@ -328,7 +389,7 @@ export async function getCase(caseId: string, signal?: AbortSignal): Promise<Cas
 
   // 2. Fallback to API route
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/cases/${caseId}` : `/api/cases/${caseId}`;
+  const endpoint = apiUrl(`/api/cases/${caseId}`);
   const res = await fetch(endpoint, {
     headers,
     signal: createRequestSignal(signal, 12000),
@@ -393,7 +454,7 @@ export async function listCases(
   if (mediaType) params.append("media_type", mediaType);
 
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/cases?${params.toString()}` : `/api/cases?${params.toString()}`;
+  const endpoint = apiUrl(`/api/cases?${params.toString()}`);
   const res = await fetch(endpoint, {
     headers,
     signal: createRequestSignal(signal, 12000),
@@ -457,7 +518,7 @@ export async function getAuditLogs(
   if (action) params.append("action", action);
 
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/audit/logs?${params.toString()}` : `/api/audit/logs?${params.toString()}`;
+  const endpoint = apiUrl(`/api/audit/logs?${params.toString()}`);
   const res = await fetch(endpoint, {
     headers,
     signal: createRequestSignal(signal, 12000),
@@ -484,7 +545,7 @@ export async function deleteCase(id: string): Promise<{ success: boolean; delete
 
   // 2. Fallback to API route
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/cases/${id}` : `/api/cases/${id}`;
+  const endpoint = apiUrl(`/api/cases/${id}`);
   const res = await fetch(endpoint, {
     method: "DELETE",
     headers,
@@ -507,7 +568,7 @@ export async function deleteAuditLog(id: string): Promise<{ success: boolean; de
 
   // 2. Fallback to API route
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/audit/logs?id=${id}` : `/api/audit/logs?id=${id}`;
+  const endpoint = apiUrl(`/api/audit/logs?id=${id}`);
   const res = await fetch(endpoint, {
     method: "DELETE",
     headers,
@@ -519,7 +580,7 @@ export async function deleteAuditLog(id: string): Promise<{ success: boolean; de
 
 export async function clearAllAuditLogs(): Promise<{ success: boolean }> {
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/audit/logs?all=true` : `/api/audit/logs?all=true`;
+  const endpoint = apiUrl("/api/audit/logs?all=true");
   const res = await fetch(endpoint, {
     method: "DELETE",
     headers,
@@ -531,7 +592,7 @@ export async function clearAllAuditLogs(): Promise<{ success: boolean }> {
 
 export async function downloadReportPdf(caseId: string, caseNumber: string): Promise<void> {
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/reports/${caseId}/pdf`, {
+  const res = await fetch(apiUrl(`/api/reports/${caseId}/pdf`), {
     headers,
   });
 
@@ -613,7 +674,7 @@ export async function listAdminUsers(): Promise<AdminUserRecord[]> {
 
   // 2. Fallback to API endpoint (/api/admin/users)
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/admin/users` : "/api/admin/users";
+  const endpoint = apiUrl("/api/admin/users");
   const res = await fetch(endpoint, { headers });
 
   if (!res.ok) {
@@ -663,7 +724,7 @@ export async function updateUserRole(userId: string, role: string): Promise<Admi
 
   // 2. Fallback to API endpoint
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}/role` : `/api/admin/users/${userId}/role`;
+  const endpoint = apiUrl(`/api/admin/users/${userId}/role`);
   const res = await fetch(endpoint, {
     method: "POST",
     headers,
@@ -716,7 +777,7 @@ export async function updateUserStatus(userId: string, isActive: boolean): Promi
 
   // 2. Fallback to API endpoint
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}/status` : `/api/admin/users/${userId}/status`;
+  const endpoint = apiUrl(`/api/admin/users/${userId}/status`);
   const res = await fetch(endpoint, {
     method: "POST",
     headers,
@@ -750,7 +811,7 @@ export async function deleteAdminUser(userId: string): Promise<{ deleted_id: str
 
   // 2. Fallback to API endpoint
   const headers = await getHeaders();
-  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}` : `/api/admin/users/${userId}`;
+  const endpoint = apiUrl(`/api/admin/users/${userId}`);
   const res = await fetch(endpoint, {
     method: "DELETE",
     headers,
@@ -781,7 +842,7 @@ export async function fetchAuthMe(tokenOverride?: string): Promise<{
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const endpoint = API_BASE ? `${API_BASE}/api/auth/me` : "/api/auth/me";
+  const endpoint = apiUrl("/api/auth/me");
   const res = await fetch(endpoint, { headers });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: "Authentication verification failed." }));

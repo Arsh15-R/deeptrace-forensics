@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2, Check, RefreshCw, XCircle, FileImage } from "lucide-react";
-import { analyzeImage } from "@/lib/api";
+import { analyzeImage, checkServerHealth } from "@/lib/api";
 import { computeClientSHA256, formatBytes, truncateHash } from "@/lib/utils";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
@@ -114,18 +114,33 @@ export const ImageUploader: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Strict 60-second client-side timeout wired to abort controller
+    // Strict 120-second client-side timeout wired to abort controller
     const timeoutId = setTimeout(() => {
       if (!userCancelledRef.current) {
-        controller.abort(new DOMException("Analysis timed out after 60 seconds.", "TimeoutError"));
+        controller.abort(new DOMException("Analysis timed out after 120 seconds.", "TimeoutError"));
       }
-    }, 60000);
+    }, 120000);
     timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
+    setProgress(10);
+    setProgressLabel("Verifying analysis engine connectivity...");
+    setProgressDetail("Establishing tunnel connection to forensic server...");
 
     try {
+      // Early health check against /api/health
+      const health = await checkServerHealth(controller.signal);
+      if (!health.ok) {
+        cleanupTimers();
+        setLoading(false);
+        setProgress(0);
+        setProgressLabel("");
+        setProgressDetail("");
+        setError(health.error || "Analysis server is offline. Start the laptop server and tunnel.");
+        return;
+      }
+
       // Stage 1: File Ingestion & Cryptographic Integrity Check
       if (process.env.NODE_ENV !== "production") {
         console.log(`[DeepTrace Client] Stage 1: Ingesting "${file.name}" (${formatBytes(file.size)})`);
@@ -262,7 +277,7 @@ export const ImageUploader: React.FC = () => {
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Analysis request timed out after 60 seconds. The examination engine did not complete within the required window."
+        ? "Analysis request timed out after 120 seconds. The examination engine did not complete within the required window."
         : (err?.message || "Failed to analyze image evidence. Engine error or network connection lost.");
 
       setError(errorMessage);

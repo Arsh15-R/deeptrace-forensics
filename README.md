@@ -217,6 +217,66 @@ To connect a production Supabase instance:
 
 ---
 
+## Hybrid Vercel + Laptop Cloudflare Tunnel Architecture
+
+For large media files (up to 50 MB images, 200 MB videos, multi-page high-resolution PDFs), Vercel's serverless function timeout (~10s) and body payload ceiling (~4.5 MB) cause network aborts and progress bar freezes. 
+
+DeepTrace supports a **hybrid execution architecture**:
+- **UI & Frontend**: Hosted globally on Vercel (`https://deeptrackforensics.vercel.app`).
+- **Heavy Analysis Pipeline**: Runs locally on your workstation/laptop (`maxDuration = 300s`, zero file size constraints).
+- **Direct Browser Communication**: The browser sends analysis payloads directly to your laptop via a secure Cloudflare Tunnel (`cloudflared`), completely bypassing Vercel execution limits.
+
+```mermaid
+flowchart LR
+    Browser["Client Browser (Vercel UI)"] -- "1. Load UI & Bundles" --> Vercel["Vercel Edge CDN"]
+    Browser -- "2. Direct POST /api/cases/analyze/* (120s timeout)" --> Tunnel["Cloudflare Tunnel (*.trycloudflare.com)"]
+    Tunnel -- "3. Forward to localhost:3000" --> Laptop["Laptop Next.js Server (maxDuration=300s)"]
+    Laptop -- "4. Store Evidence & Audit Log" --> Supabase[("Supabase DB & Storage Vault")]
+    Laptop -- "5. Return Verified Dossier" --> Browser
+```
+
+### Step-by-Step Run Order
+
+1. **Start the Laptop Analysis Server**:
+   ```bash
+   cd frontend
+   npm run serve
+   # or for live development: npm run dev
+   ```
+
+2. **Start the Cloudflare Tunnel**:
+   ```bash
+   npm run tunnel
+   # or manually: cloudflared tunnel --url http://localhost:3000
+   ```
+   Note the generated public URL printed in the terminal (e.g. `https://random-words.trycloudflare.com`).
+
+3. **Configure Vercel Environment**:
+   In your Vercel Project Settings (`Settings > Environment Variables`), set:
+   ```env
+   NEXT_PUBLIC_API_URL=https://random-words.trycloudflare.com
+   ```
+
+4. **Redeploy on Vercel**:
+   > ⚠️ **IMPORTANT (Build-Time Inlining):** In Next.js, all `NEXT_PUBLIC_*` variables are baked into client JavaScript bundles at **build time**. Whenever your temporary `trycloudflare.com` tunnel URL changes, you **must trigger a redeployment on Vercel** (`npx vercel --prod --yes` or via the Vercel Dashboard) for the browser to call the new endpoint.
+
+5. **Configure CORS Allowlist on Laptop**:
+   In `frontend/.env.local` on your local laptop, add your Vercel production domain to `ALLOWED_ORIGINS`:
+   ```env
+   ALLOWED_ORIGINS="https://deeptrackforensics.vercel.app,http://localhost:3000"
+   ```
+
+6. **Restart the Laptop Server**:
+   Restart the local server so it picks up the updated `ALLOWED_ORIGINS`.
+
+### Security Advisory & Data Isolation
+- **Demonstration Architecture**: This hybrid setup is engineered for client demonstrations, testing, and non-classified investigative triage. **Do NOT process real-world classified evidentiary material over unauthenticated ephemeral tunnels.**
+- **Service-Role Key Protection**: `SUPABASE_SERVICE_ROLE_KEY` is strictly server-only. It must NEVER be prefixed with `NEXT_PUBLIC_` or bundled into client code.
+- **Log Privacy**: File contents and raw binary payloads are never logged. Only cryptographic SHA-256 hashes, file sizes, and stage timestamps are recorded in operational telemetry.
+- **Authentication**: Auth uses Supabase **Bearer tokens** (`Authorization: Bearer <token>`), preventing cross-site cookie blocking and third-party cookie restrictions across separate domains.
+
+---
+
 ## Role & Permission Hierarchy
 
 | Feature / Action | Officer (`officer`) | Internal Affairs Supervisor (`admin`) |

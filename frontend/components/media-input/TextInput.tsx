@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldAlert, AlertCircle, Loader2, Upload, RefreshCw, XCircle } from "lucide-react";
-import { analyzeText, submitAnalysisJob, getAnalysisJobStatus } from "@/lib/api";
+import { analyzeText, submitAnalysisJob, getAnalysisJobStatus, checkServerHealth } from "@/lib/api";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
 export const TextInput: React.FC = () => {
@@ -81,24 +81,40 @@ export const TextInput: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Strict 120-second client-side timeout wired to abort controller
     const timeoutId = setTimeout(() => {
       if (!userCancelledRef.current) {
-        controller.abort(new DOMException("Text analysis timed out after 60 seconds.", "TimeoutError"));
+        controller.abort(new DOMException("Text analysis timed out after 120 seconds.", "TimeoutError"));
       }
-    }, 60000);
+    }, 120000);
     timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
-    setProgress(25);
-    setProgressMsg("Tokenizing statement corpus & calculating Shannon entropy...");
-    setProgressDetail("Stage 1 of 4: Ingestion & Corpus Tokenization");
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[DeepTrace Client] Text Stage 1: Ingesting text/doc payload`);
-    }
+    setProgress(10);
+    setProgressMsg("Verifying analysis engine connectivity...");
+    setProgressDetail("Establishing tunnel connection to forensic server...");
 
     try {
+      // Early health check against /api/health
+      const health = await checkServerHealth(controller.signal);
+      if (!health.ok) {
+        cleanupTimers();
+        setLoading(false);
+        setProgress(0);
+        setProgressMsg("");
+        setProgressDetail("");
+        setError(health.error || "Analysis server is offline. Start the laptop server and tunnel.");
+        return;
+      }
+
+      setProgress(25);
+      setProgressMsg("Tokenizing statement corpus & calculating Shannon entropy...");
+      setProgressDetail("Stage 1 of 4: Ingestion & Corpus Tokenization");
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Text Stage 1: Ingesting text/doc payload`);
+      }
       if (docFile) {
         setProgress(50);
         setProgressMsg("Parsing document structure & stylometry...");
@@ -228,7 +244,7 @@ export const TextInput: React.FC = () => {
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Text analysis request timed out after 60 seconds. The stylometric engine did not respond in time."
+        ? "Text analysis request timed out after 120 seconds. The stylometric engine did not respond in time."
         : (err?.message || "Failed to evaluate text statement.");
 
       setError(errorMessage);

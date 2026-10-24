@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Volume2, AlertCircle, Loader2, RefreshCw, XCircle } from "lucide-react";
-import { analyzeAudio } from "@/lib/api";
+import { analyzeAudio, checkServerHealth } from "@/lib/api";
 import { computeClientSHA256, formatBytes, truncateHash } from "@/lib/utils";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
@@ -110,18 +110,33 @@ export const AudioUploader: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Strict 60-second client-side timeout wired to abort controller
+    // Strict 120-second client-side timeout wired to abort controller
     const timeoutId = setTimeout(() => {
       if (!userCancelledRef.current) {
-        controller.abort(new DOMException("Audio analysis timed out after 60 seconds.", "TimeoutError"));
+        controller.abort(new DOMException("Audio analysis timed out after 120 seconds.", "TimeoutError"));
       }
-    }, 60000);
+    }, 120000);
     timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
+    setProgress(10);
+    setProgressLabel("Verifying analysis engine connectivity...");
+    setProgressDetail("Establishing tunnel connection to forensic server...");
 
     try {
+      // Early health check against /api/health
+      const health = await checkServerHealth(controller.signal);
+      if (!health.ok) {
+        cleanupTimers();
+        setLoading(false);
+        setProgress(0);
+        setProgressLabel("");
+        setProgressDetail("");
+        setError(health.error || "Analysis server is offline. Start the laptop server and tunnel.");
+        return;
+      }
+
       // Stage 1: File Ingestion & Cryptographic Check
       if (process.env.NODE_ENV !== "production") {
         console.log(`[DeepTrace Client] Audio Stage 1: Ingesting "${file.name}" (${formatBytes(file.size)})`);
@@ -237,7 +252,7 @@ export const AudioUploader: React.FC = () => {
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Audio analysis request timed out after 60 seconds. The acoustic examination engine did not complete in time."
+        ? "Audio analysis request timed out after 120 seconds. The acoustic examination engine did not complete in time."
         : (err?.message || "Failed to analyze audio evidence. Engine error or network connection lost.");
 
       setError(errorMessage);

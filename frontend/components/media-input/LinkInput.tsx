@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Globe, AlertCircle, Loader2, Link as LinkIcon, RefreshCw, XCircle } from "lucide-react";
-import { analyzeLink } from "@/lib/api";
+import { analyzeLink, checkServerHealth } from "@/lib/api";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
 export const LinkInput: React.FC = () => {
@@ -73,17 +73,33 @@ export const LinkInput: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Strict 120-second client-side timeout wired to abort controller
     const timeoutId = setTimeout(() => {
       if (!userCancelledRef.current) {
-        controller.abort(new DOMException("Link examination timed out after 60 seconds.", "TimeoutError"));
+        controller.abort(new DOMException("Link examination timed out after 120 seconds.", "TimeoutError"));
       }
-    }, 60000);
+    }, 120000);
     timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
+    setProgress(10);
+    setProgressLabel("Verifying analysis engine connectivity...");
+    setProgressDetail("Establishing tunnel connection to forensic server...");
 
     try {
+      // Early health check against /api/health
+      const health = await checkServerHealth(controller.signal);
+      if (!health.ok) {
+        cleanupTimers();
+        setLoading(false);
+        setProgress(0);
+        setProgressLabel("");
+        setProgressDetail("");
+        setError(health.error || "Analysis server is offline. Start the laptop server and tunnel.");
+        return;
+      }
+
       // Stage 1: DNS Resolution & SSRF Guard
       setProgress(25);
       setProgressLabel("Evaluating URL destination & SSRF isolation...");
@@ -181,7 +197,7 @@ export const LinkInput: React.FC = () => {
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Remote media request timed out after 60 seconds. The server or target link took too long to respond."
+        ? "Remote media request timed out after 120 seconds. The server or target link took too long to respond."
         : (err?.message || "Failed to fetch and evaluate media from the specified link.");
 
       setError(errorMessage);

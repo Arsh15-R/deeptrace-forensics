@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { resolveMediaUrl, cn } from "@/lib/utils";
+import { resolveMediaUrl, apiUrl, cn } from "@/lib/utils";
 import { Eye, Layers, Sliders, AlertCircle, Sparkles, Columns2 } from "lucide-react";
 
 interface ImageHeatmapViewerProps {
@@ -25,7 +25,7 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
   const [heatmapFailed, setHeatmapFailed] = useState(false);
 
   const initialOrig = resolveMediaUrl(originalUrl) || cachedPreviewUrl || "";
-  const initialHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? `/api/media/heatmap/${caseId}` : "");
+  const initialHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? apiUrl(`/api/media/heatmap/${caseId}`) : "");
 
   const [origSrc, setOrigSrc] = useState<string>(initialOrig);
   const [heatmapSrc, setHeatmapSrc] = useState<string>(initialHeatmap);
@@ -38,7 +38,7 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
   }, [originalUrl, cachedPreviewUrl]);
 
   React.useEffect(() => {
-    const nextHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? `/api/media/heatmap/${caseId}` : "");
+    const nextHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? apiUrl(`/api/media/heatmap/${caseId}`) : "");
     setHeatmapSrc(nextHeatmap);
     setHeatmapFailed(false);
   }, [heatmapUrl, caseId]);
@@ -48,7 +48,7 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
     if (cachedPreviewUrl && origSrc !== cachedPreviewUrl) {
       setOrigSrc(cachedPreviewUrl);
     } else if (caseId && !origSrc.includes(`/api/media/evidence/${caseId}`)) {
-      setOrigSrc(`/api/media/evidence/${caseId}`);
+      setOrigSrc(apiUrl(`/api/media/evidence/${caseId}`));
     } else {
       setOrigFailed(true);
     }
@@ -56,7 +56,7 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
 
   const handleHeatmapError = () => {
     if (caseId && !heatmapSrc.includes(`/api/media/heatmap/${caseId}`)) {
-      setHeatmapSrc(`/api/media/heatmap/${caseId}`);
+      setHeatmapSrc(apiUrl(`/api/media/heatmap/${caseId}`));
     } else {
       setHeatmapFailed(true);
     }
