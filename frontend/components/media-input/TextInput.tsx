@@ -10,7 +10,7 @@ export const TextInput: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
   const userCancelledRef = useRef<boolean>(false);
 
   const [text, setText] = useState<string>("");
@@ -26,10 +26,11 @@ export const TextInput: React.FC = () => {
   const charCount = text.length;
 
   const cleanupTimers = () => {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    timersRef.current.forEach((t) => {
+      clearTimeout(t);
+      clearInterval(t);
+    });
+    timersRef.current = [];
   };
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export const TextInput: React.FC = () => {
         controller.abort(new DOMException("Text analysis timed out after 60 seconds.", "TimeoutError"));
       }
     }, 60000);
-    progressTimerRef.current = timeoutId;
+    timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
@@ -97,8 +98,8 @@ export const TextInput: React.FC = () => {
       console.log(`[DeepTrace Client] Text Stage 1: Ingesting text/doc payload`);
     }
 
-    if (docFile) {
-      try {
+    try {
+      if (docFile) {
         setProgress(50);
         setProgressMsg("Parsing document structure & stylometry...");
         setProgressDetail("Stage 2 of 4: PyPDF / DOCX Structural Text Extraction");
@@ -109,7 +110,7 @@ export const TextInput: React.FC = () => {
         );
 
         let attempts = 0;
-        progressTimerRef.current = setInterval(async () => {
+        const intervalId = setInterval(async () => {
           attempts += 1;
           try {
             const st = await getAnalysisJobStatus(job.jobId, controller.signal);
@@ -137,20 +138,49 @@ export const TextInput: React.FC = () => {
             }
           }
         }, 800);
-      } catch (err: any) {
-        cleanupTimers();
-        setLoading(false);
-        setProgress(0);
-        if (userCancelledRef.current) return;
-        console.error("Document analysis error:", err);
-        setError(err.message || "Failed to submit document for analysis.");
-      }
-    } else {
-      setProgress(60);
-      setProgressMsg("Evaluating Shannon entropy, Zipfian slope & sentence burstiness...");
-      setProgressDetail("Stage 2 of 4: Perplexity & Transition Cliché Density");
+        timersRef.current.push(intervalId);
+      } else {
+        setProgress(60);
+        setProgressMsg("Evaluating Shannon entropy, Zipfian slope & sentence burstiness...");
+        setProgressDetail("Stage 2 of 4: Perplexity & Transition Cliché Density");
 
-      try {
+        timersRef.current.push(
+          setTimeout(() => {
+            if (!userCancelledRef.current) {
+              setProgress(75);
+              setProgressMsg("Analyzing lexical diversity & Zipfian frequency rank distribution...");
+              setProgressDetail("Stage 3 of 4: Lexical Diversity & Vocabulary Ranks");
+              if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Text Stage 2.1: Progress 75%");
+            }
+          }, 400)
+        );
+
+        timersRef.current.push(
+          setTimeout(() => {
+            if (!userCancelledRef.current) {
+              setProgress(88);
+              setProgressMsg("Evaluating sentence burstiness & formulaic transition markers...");
+              setProgressDetail("Stage 3 of 4: Syntactic Rhythm & Stylometric Markers");
+              if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Text Stage 2.2: Progress 88%");
+            }
+          }, 1000)
+        );
+
+        timersRef.current.push(
+          setTimeout(() => {
+            if (!userCancelledRef.current) {
+              setProgress(94);
+              setProgressMsg("Calibrating linguistic likelihood ratio & signing audit record...");
+              setProgressDetail("Stage 4 of 4: Awaiting final verification...");
+              if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Text Stage 2.3: Progress 94% (holding until server response)");
+            }
+          }, 1800)
+        );
+
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[DeepTrace Client] Text Stage 2: Dispatching POST /api/cases/analyze/text...");
+        }
+
         const result = await analyzeText(text, caseRef.trim() || undefined, controller.signal);
         cleanupTimers();
 
@@ -159,32 +189,44 @@ export const TextInput: React.FC = () => {
           return;
         }
 
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[DeepTrace Client] Text Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}`);
+        }
+
         setProgress(100);
-        setProgressMsg("Linguistic evaluation certified.");
+        setProgressMsg("Linguistic evaluation certified. Opening dossier...");
         setProgressDetail("Stage 4 of 4: Forensic Uncertainty Calibrated");
+
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[DeepTrace Client] Text Stage 4: Progress 100%. Transitioning to /results/${result.id}`);
+        }
 
         setTimeout(() => {
           router.push(`/results/${result.id}`);
-        }, 350);
-      } catch (err: any) {
-        cleanupTimers();
-        setLoading(false);
-        setProgress(0);
-
-        if (userCancelledRef.current) return;
-
-        console.error("Text analysis error:", err);
-        const isTimeout =
-          err?.name === "TimeoutError" ||
-          err?.message?.includes("timed out") ||
-          (err?.name === "AbortError" && !userCancelledRef.current);
-
-        const errorMessage = isTimeout
-          ? "Text analysis request timed out. The stylometric engine did not respond in time."
-          : (err.message || "Failed to evaluate text statement.");
-
-        setError(errorMessage);
+        }, 250);
       }
+    } catch (err: any) {
+      cleanupTimers();
+      setLoading(false);
+      setProgress(0);
+      setProgressMsg("");
+      setProgressDetail("");
+
+      if (userCancelledRef.current) return;
+
+      console.error("[DeepTrace Client] Text analysis error:", err);
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timed out") ||
+        (err?.name === "AbortError" && !userCancelledRef.current);
+
+      const errorMessage = isTimeout
+        ? "Text analysis request timed out after 60 seconds. The stylometric engine did not respond in time."
+        : (err?.message || "Failed to evaluate text statement.");
+
+      setError(errorMessage);
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 

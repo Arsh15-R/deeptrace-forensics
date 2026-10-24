@@ -101,6 +101,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   console.log(`[ForensicEngine ${caseId}] Starting examination for "${input.filename}" (${input.mediaType}, ${input.buffer?.length || 0} bytes)`);
 
   // 1. Calculate Cryptographic SHA-256 & File Size
+  const tShaStart = Date.now();
   let sha256 = "";
   let fileSizeBytes = 0;
   let textSnippet: string | null = null;
@@ -133,6 +134,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     fileSizeBytes = 1024;
     mimeType = "text/html";
   }
+  console.log(`[ForensicEngine ${caseId}] Stage 1: SHA-256 fingerprint computed in ${Date.now() - tShaStart}ms: ${sha256}`);
 
   // 2. Perform Real Multi-Modal Forensic Analysis
   let verdict: Verdict = "inconclusive";

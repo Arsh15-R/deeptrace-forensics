@@ -9,7 +9,7 @@ import { LoadingBar } from "@/components/ui/LoadingBar";
 export const LinkInput: React.FC = () => {
   const router = useRouter();
   const abortControllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
   const userCancelledRef = useRef<boolean>(false);
 
   const [url, setUrl] = useState<string>("");
@@ -21,10 +21,11 @@ export const LinkInput: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const cleanupTimers = () => {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    timersRef.current.forEach((t) => {
+      clearTimeout(t);
+      clearInterval(t);
+    });
+    timersRef.current = [];
   };
 
   useEffect(() => {
@@ -37,6 +38,9 @@ export const LinkInput: React.FC = () => {
   }, []);
 
   const cancelAnalysis = useCallback(() => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[DeepTrace Client] Operator cancelled remote link examination.");
+    }
     userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
@@ -74,24 +78,63 @@ export const LinkInput: React.FC = () => {
         controller.abort(new DOMException("Link examination timed out after 60 seconds.", "TimeoutError"));
       }
     }, 60000);
-    progressTimerRef.current = timeoutId;
+    timersRef.current.push(timeoutId);
 
     setLoading(true);
     setError(null);
-    setProgress(25);
-    setProgressLabel("Evaluating URL destination & SSRF isolation...");
-    setProgressDetail("Stage 1 of 4: DNS Resolution & Private Subnet Guard");
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[DeepTrace Client] Link Stage 1: Initiating ingestion for URL: ${url.trim()}`);
-    }
-
-    // Stage 2: Fetch and analyze
-    setProgress(60);
-    setProgressLabel("Fetching remote stream & evaluating multimodal sensor artifacts...");
-    setProgressDetail("Stage 2 of 4: Remote Retrieval & Neural Frequency Inspection");
 
     try {
+      // Stage 1: DNS Resolution & SSRF Guard
+      setProgress(25);
+      setProgressLabel("Evaluating URL destination & SSRF isolation...");
+      setProgressDetail("Stage 1 of 4: DNS Resolution & Private Subnet Guard");
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Link Stage 1: Initiating ingestion for URL: ${url.trim()}`);
+      }
+
+      // Stage 2: Fetch and analyze
+      setProgress(60);
+      setProgressLabel("Fetching remote stream & evaluating multimodal sensor artifacts...");
+      setProgressDetail("Stage 2 of 4: Remote Retrieval & Neural Frequency Inspection");
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(75);
+            setProgressLabel("Inspecting remote container codec & sensor PRNU patterns...");
+            setProgressDetail("Stage 3 of 4: Remote Stream Container & Noise Residuals");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Link Stage 2.1: Progress 75%");
+          }
+        }, 400)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(88);
+            setProgressLabel("Analyzing remote stream frame variance & latent markers...");
+            setProgressDetail("Stage 3 of 4: Latent Synthesis Verification");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Link Stage 2.2: Progress 88%");
+          }
+        }, 1000)
+      );
+
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgress(94);
+            setProgressLabel("Calibrating Neyman-Pearson likelihood & signing ledger record...");
+            setProgressDetail("Stage 4 of 4: Awaiting final verification...");
+            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Link Stage 2.3: Progress 94% (holding until server response)");
+          }
+        }, 1800)
+      );
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[DeepTrace Client] Link Stage 2: Dispatching POST /api/cases/analyze/link...");
+      }
+
       const result = await analyzeLink(url.trim(), caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
 
@@ -100,13 +143,21 @@ export const LinkInput: React.FC = () => {
         return;
       }
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Link Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}`);
+      }
+
       setProgress(100);
       setProgressLabel("Remote evidence analyzed. Opening dossier...");
       setProgressDetail("Stage 4 of 4: Cryptographic Ledger Certified");
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[DeepTrace Client] Link Stage 4: Progress 100%. Transitioning to /results/${result.id}`);
+      }
+
       setTimeout(() => {
         router.push(`/results/${result.id}`);
-      }, 350);
+      }, 250);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);
@@ -116,17 +167,19 @@ export const LinkInput: React.FC = () => {
 
       if (userCancelledRef.current) return;
 
-      console.error("Link analysis error:", err);
+      console.error("[DeepTrace Client] Link analysis error:", err);
       const isTimeout =
         err?.name === "TimeoutError" ||
         err?.message?.includes("timed out") ||
         (err?.name === "AbortError" && !userCancelledRef.current);
 
       const errorMessage = isTimeout
-        ? "Remote media request timed out. The server or target link took too long to respond."
+        ? "Remote media request timed out after 60 seconds. The server or target link took too long to respond."
         : (err?.message || "Failed to fetch and evaluate media from the specified link.");
 
       setError(errorMessage);
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 

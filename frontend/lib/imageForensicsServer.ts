@@ -22,6 +22,7 @@ export interface ImageForensicAnalysis {
 
 /**
  * Universal zero-dependency image decoder supporting JPEG and PNG scanline decoding.
+ * Enforces strict 1024px downsampling during decode to prevent Vercel memory stalls and slow loops.
  */
 function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: Uint8Array } | null {
   // Check for PNG signature
@@ -31,7 +32,8 @@ function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: 
       const height = buf.readUInt32BE(20);
       const bitDepth = buf[24];
       const colorType = buf[25];
-      if (bitDepth === 8 && (colorType === 6 || colorType === 2)) {
+
+      if (width > 0 && height > 0 && width <= 8192 && height <= 8192 && bitDepth === 8 && (colorType === 6 || colorType === 2)) {
         const bytesPerPixel = colorType === 6 ? 4 : 3;
         let pos = 8;
         const idatParts: Buffer[] = [];
@@ -46,13 +48,23 @@ function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: 
 
         const decompressed = zlib.inflateSync(Buffer.concat(idatParts));
         const scanlineLen = 1 + width * bytesPerPixel;
-        const out = new Uint8Array(width * height * 4);
+
+        // Downscale long side to a max of 1024px during scanline processing for zero memory blowup
+        const maxDim = Math.max(width, height);
+        const downsampleStep = maxDim > 1024 ? Math.ceil(maxDim / 1024) : 1;
+        const outW = Math.floor(width / downsampleStep);
+        const outH = Math.floor(height / downsampleStep);
+        const out = new Uint8Array(outW * outH * 4);
+
         const prevRow = new Uint8Array(width * bytesPerPixel);
         const currRow = new Uint8Array(width * bytesPerPixel);
 
+        let outY = 0;
         for (let y = 0; y < height; y++) {
           const rowStart = y * scanlineLen;
+          if (rowStart >= decompressed.length) break;
           const filter = decompressed[rowStart];
+
           for (let i = 0; i < width * bytesPerPixel; i++) {
             const raw = decompressed[rowStart + 1 + i];
             const a = i >= bytesPerPixel ? currRow[i - bytesPerPixel] : 0;
@@ -72,25 +84,30 @@ function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: 
             }
             currRow[i] = val;
           }
-          for (let x = 0; x < width; x++) {
-            const dst = (y * width + x) * 4;
-            if (colorType === 6) {
-              const src = x * 4;
-              out[dst] = currRow[src];
-              out[dst + 1] = currRow[src + 1];
-              out[dst + 2] = currRow[src + 2];
-              out[dst + 3] = currRow[src + 3];
-            } else {
-              const src = x * 3;
-              out[dst] = currRow[src];
-              out[dst + 1] = currRow[src + 1];
-              out[dst + 2] = currRow[src + 2];
-              out[dst + 3] = 255;
+
+          if (y % downsampleStep === 0 && outY < outH) {
+            for (let outX = 0; outX < outW; outX++) {
+              const srcX = outX * downsampleStep;
+              const dst = (outY * outW + outX) * 4;
+              if (colorType === 6) {
+                const src = srcX * 4;
+                out[dst] = currRow[src];
+                out[dst + 1] = currRow[src + 1];
+                out[dst + 2] = currRow[src + 2];
+                out[dst + 3] = currRow[src + 3];
+              } else {
+                const src = srcX * 3;
+                out[dst] = currRow[src];
+                out[dst + 1] = currRow[src + 1];
+                out[dst + 2] = currRow[src + 2];
+                out[dst + 3] = 255;
+              }
             }
+            outY++;
           }
           prevRow.set(currRow);
         }
-        return { width, height, data: out };
+        return { width: outW, height: outH, data: out };
       }
     } catch {
       // Fall through to JPEG decoder or return null
@@ -98,10 +115,32 @@ function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: 
   }
 
   try {
-    return jpeg.decode(buf, { useTArray: true });
+    const rawJpeg = jpeg.decode(buf, { useTArray: true, maxMemoryUsageInMB: 256 });
+    if (rawJpeg) {
+      const maxDim = Math.max(rawJpeg.width, rawJpeg.height);
+      if (maxDim > 1024) {
+        const step = Math.ceil(maxDim / 1024);
+        const outW = Math.floor(rawJpeg.width / step);
+        const outH = Math.floor(rawJpeg.height / step);
+        const out = new Uint8Array(outW * outH * 4);
+        for (let y = 0; y < outH; y++) {
+          for (let x = 0; x < outW; x++) {
+            const srcIdx = (y * step * rawJpeg.width + x * step) * 4;
+            const dstIdx = (y * outW + x) * 4;
+            out[dstIdx] = rawJpeg.data[srcIdx];
+            out[dstIdx + 1] = rawJpeg.data[srcIdx + 1];
+            out[dstIdx + 2] = rawJpeg.data[srcIdx + 2];
+            out[dstIdx + 3] = rawJpeg.data[srcIdx + 3];
+          }
+        }
+        return { width: outW, height: outH, data: out };
+      }
+      return rawJpeg;
+    }
   } catch {
     return null;
   }
+  return null;
 }
 
 /**
@@ -114,6 +153,7 @@ function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: 
  * 5. Framebuffer UI Screen Capture & Screenshot Classification
  */
 export function analyzeImageForensics(buf: Buffer, filename: string): ImageForensicAnalysis {
+  const tImgStart = Date.now();
   const rawStr = buf.toString("latin1");
   const hasAiMarkers =
     /midjourney|dall-e|stablediffusion|c2pa|flux\.1|novelai|synthid|ideogram|leonardo|firefly|bing\/create|wepik|craiyon|recraft|comfyui|automatic1111/i.test(
@@ -128,6 +168,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
     );
 
   const decoded = decodeImageBuffer(buf);
+  const tDecoded = Date.now();
 
   let flatRatio = 0;
   let disparityIndex = 0;
@@ -150,6 +191,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
 
     // Safe bounds check: Skip heavy pixel passes if totalPixels exceeds safe limit
     const isSafePixelCount = totalPixels > 0 && totalPixels <= 250000;
+    console.log(`[ImageEngine] Decoded "${filename}" in ${tDecoded - tImgStart}ms: ${width}x${height} (grid: ${subW}x${subH}, pixels: ${totalPixels}, safe: ${isSafePixelCount})`);
 
     if (isSafePixelCount) {
       const data = decoded.data;
