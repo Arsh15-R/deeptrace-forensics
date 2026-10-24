@@ -100,6 +100,31 @@ const LLM_MARKERS: RegExp[] = [
   /\bin today's fast-paced world\b/i,
   /\bin today's digital era\b/i,
   /\bin today's interconnected world\b/i,
+
+  // Conversational AI Assistant & Instructional Markers
+  /\bI can walk you through\b/i,
+  /\bif you want(?: me to)?\b/i,
+  /\bif you('d| would) like(?: me to)?\b/i,
+  /\bfeel free to\b/i,
+  /\blet me know if\b/i,
+  /\bhope this helps\b/i,
+  /\bhappy to help\b/i,
+  /\bI can (?:help|explain|clarify|provide|walk|assist)\b/i,
+  /\bhere('s| is) (?:what|how|a breakdown|a summary|an overview)\b/i,
+  /\bto try it\b/i,
+  /\bbefore you set this up\b/i,
+  /\bthe command above\b/i,
+  /\bthe bottleneck for\b/i,
+  /\bin a second terminal\b/i,
+  /\bI still haven't seen\b/i,
+  /\bkeep in mind that\b/i,
+  /\bmake sure to\b/i,
+  /\byou('ll| will) want to\b/i,
+  /\byou can (?:also|try|run|check|use)\b/i,
+  /\bdownloads page\b/i,
+  /\bas mentioned (?:earlier|above)\b/i,
+  /\bstep-by-step\b/i,
+  /\bplease note that\b/i,
 ];
 
 /**
@@ -306,7 +331,11 @@ function analyzeTextStylometryPureTs(
   const words = cleanText.match(/\b[A-Za-z0-9'-]+\b/g) || [];
   const wordCount = words.length;
 
-  const rawSentences = cleanText.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 3);
+  const protectedText = cleanText.replace(/(?<=\w)\.(?=\w)/g, "@@DOT@@");
+  const rawSentences = protectedText
+    .split(/[.!?]+/)
+    .map((s) => s.replace(/@@DOT@@/g, ".").trim())
+    .filter((s) => s.length > 3);
   const sentenceCount = rawSentences.length;
 
   // 1. Scanned Physical Document Guard

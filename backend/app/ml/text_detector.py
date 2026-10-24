@@ -99,6 +99,30 @@ class TextDeepfakeDetector:
             r"\bin today's fast-paced world\b",
             r"\bin today's digital era\b",
             r"\bin today's interconnected world\b",
+            # Conversational AI Assistant & Instructional Markers
+            r"\bI can walk you through\b",
+            r"\bif you want(?: me to)?\b",
+            r"\bif you('d| would) like(?: me to)?\b",
+            r"\bfeel free to\b",
+            r"\blet me know if\b",
+            r"\bhope this helps\b",
+            r"\bhappy to help\b",
+            r"\bI can (?:help|explain|clarify|provide|walk|assist)\b",
+            r"\bhere('s| is) (?:what|how|a breakdown|a summary|an overview)\b",
+            r"\bto try it\b",
+            r"\bbefore you set this up\b",
+            r"\bthe command above\b",
+            r"\bthe bottleneck for\b",
+            r"\bin a second terminal\b",
+            r"\bI still haven't seen\b",
+            r"\bkeep in mind that\b",
+            r"\bmake sure to\b",
+            r"\byou('ll| will) want to\b",
+            r"\byou can (?:also|try|run|check|use)\b",
+            r"\bdownloads page\b",
+            r"\bas mentioned (?:earlier|above)\b",
+            r"\bstep-by-step\b",
+            r"\bplease note that\b",
         ]
 
     def extract_text_and_meta(self, data: bytes, filename: str) -> Tuple[str, Dict[str, Any]]:
@@ -220,8 +244,13 @@ class TextDeepfakeDetector:
         words = re.findall(r"\b[A-Za-z0-9'-]+\b", clean_text)
         word_count = len(words)
         
-        # Split into sentences
-        sentences = [s.strip() for s in re.split(r"[.!?]+", clean_text) if len(s.strip()) > 3]
+        # Protect technical periods in packages/domains (e.g. Cloudflare.cloudflared, script.py)
+        protected_text = re.sub(r"(?<=\w)\.(?=\w)", "@@DOT@@", clean_text)
+        sentences = [
+            s.strip().replace("@@DOT@@", ".")
+            for s in re.split(r"[.!?]+", protected_text)
+            if len(s.strip()) > 3
+        ]
         sentence_count = len(sentences)
 
         key_findings = []
