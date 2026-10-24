@@ -12,6 +12,7 @@ export const VideoUploader: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [sha256, setSha256] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export const VideoUploader: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -98,6 +100,7 @@ export const VideoUploader: React.FC = () => {
   const handleAnalyze = async () => {
     if (!file) return;
 
+    userCancelledRef.current = false;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -108,8 +111,8 @@ export const VideoUploader: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    // Stage 1: File ingestion
-    setProgress(20);
+    // Stage 1: File Ingestion & Cryptographic Check
+    setProgress(25);
     setProgressStatus("Streaming video container & computing SHA-256 hash...");
     setProgressDetail("Stage 1 of 4: Stream Sampling & Evidence Ingestion");
 
@@ -120,27 +123,24 @@ export const VideoUploader: React.FC = () => {
       } catch {}
     }
 
-    if (controller.signal.aborted) return;
+    if (userCancelledRef.current || controller.signal.aborted) {
+      setLoading(false);
+      return;
+    }
 
-    // Stage 2: Dense frame sampling
-    setProgress(40);
-    setProgressStatus("Sampling frames (~1 frame/0.75s) & detecting facial boundaries...");
-    setProgressDetail("Stage 2 of 4: Spatial Haar Detection & Boundary Cropping");
-
-    // Smooth incremental ticker for Farneback optical flow (caps at 88%)
-    let dynamicProgress = 40;
-    progressTimerRef.current = setInterval(() => {
-      dynamicProgress = Math.min(88, dynamicProgress + 3);
-      setProgress(dynamicProgress);
-      if (dynamicProgress >= 65) {
-        setProgressStatus("Calculating Farneback dense optical flow inter-frame shear...");
-        setProgressDetail("Stage 3 of 4: Motion Coherence & Multi-Frame Persistence");
-      }
-    }, 500);
+    // Stage 2: Dense Frame Sampling & Optical Flow Evaluation
+    setProgress(60);
+    setProgressStatus("Sampling frames, evaluating facial seams & Farneback dense optical flow...");
+    setProgressDetail("Stage 2 of 4: Temporal Coherence & Multi-Frame Persistence");
 
     try {
       const result = await analyzeVideo(file, caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
+
+      if (userCancelledRef.current) {
+        setLoading(false);
+        return;
+      }
 
       setProgress(100);
       setProgressStatus("Temporal synthesis verified. Preparing case record...");
@@ -148,18 +148,29 @@ export const VideoUploader: React.FC = () => {
 
       setTimeout(() => {
         router.push(`/results/${result.id}`);
-      }, 400);
+      }, 350);
     } catch (err: any) {
       cleanupTimers();
-      if (err.name === "AbortError" || controller.signal.aborted) {
-        return;
-      }
-      console.error("Video analysis error:", err);
-      setError(err?.message || "Failed to analyze video evidence. Network or engine timeout.");
       setLoading(false);
       setProgress(0);
       setProgressStatus("");
       setProgressDetail("");
+
+      if (userCancelledRef.current) {
+        return;
+      }
+
+      console.error("Video analysis error:", err);
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timed out") ||
+        (err?.name === "AbortError" && !userCancelledRef.current);
+
+      const errorMessage = isTimeout
+        ? "Video analysis request timed out. The temporal examination engine did not complete in time."
+        : (err?.message || "Failed to analyze video evidence. Engine error or network connection lost.");
+
+      setError(errorMessage);
     }
   };
 

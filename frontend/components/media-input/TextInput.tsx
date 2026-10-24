@@ -11,6 +11,7 @@ export const TextInput: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userCancelledRef = useRef<boolean>(false);
 
   const [text, setText] = useState<string>("");
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -49,6 +50,7 @@ export const TextInput: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -70,6 +72,7 @@ export const TextInput: React.FC = () => {
       return;
     }
 
+    userCancelledRef.current = false;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -79,13 +82,13 @@ export const TextInput: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    setProgress(20);
+    setProgress(25);
     setProgressMsg("Tokenizing statement corpus & calculating Shannon entropy...");
     setProgressDetail("Stage 1 of 4: Ingestion & Corpus Tokenization");
 
     if (docFile) {
       try {
-        setProgress(35);
+        setProgress(50);
         setProgressMsg("Parsing document structure & stylometry...");
         setProgressDetail("Stage 2 of 4: PyPDF / DOCX Structural Text Extraction");
 
@@ -125,25 +128,25 @@ export const TextInput: React.FC = () => {
         }, 800);
       } catch (err: any) {
         cleanupTimers();
-        if (err.name === "AbortError" || controller.signal.aborted) return;
-        setError(err.message || "Failed to submit document for analysis.");
         setLoading(false);
         setProgress(0);
+        if (userCancelledRef.current) return;
+        console.error("Document analysis error:", err);
+        setError(err.message || "Failed to submit document for analysis.");
       }
     } else {
-      let dynamicProgress = 20;
-      progressTimerRef.current = setInterval(() => {
-        dynamicProgress = Math.min(88, dynamicProgress + 4);
-        setProgress(dynamicProgress);
-        if (dynamicProgress >= 50) {
-          setProgressMsg("Evaluating Shannon entropy & sentence burstiness...");
-          setProgressDetail("Stage 3 of 4: Perplexity & Transition Phrase Density");
-        }
-      }, 350);
+      setProgress(60);
+      setProgressMsg("Evaluating Shannon entropy, Zipfian slope & sentence burstiness...");
+      setProgressDetail("Stage 2 of 4: Perplexity & Transition Cliché Density");
 
       try {
         const result = await analyzeText(text, caseRef.trim() || undefined, controller.signal);
         cleanupTimers();
+
+        if (userCancelledRef.current) {
+          setLoading(false);
+          return;
+        }
 
         setProgress(100);
         setProgressMsg("Linguistic evaluation certified.");
@@ -154,10 +157,22 @@ export const TextInput: React.FC = () => {
         }, 350);
       } catch (err: any) {
         cleanupTimers();
-        if (err.name === "AbortError" || controller.signal.aborted) return;
-        setError(err.message || "Failed to evaluate text statement.");
         setLoading(false);
         setProgress(0);
+
+        if (userCancelledRef.current) return;
+
+        console.error("Text analysis error:", err);
+        const isTimeout =
+          err?.name === "TimeoutError" ||
+          err?.message?.includes("timed out") ||
+          (err?.name === "AbortError" && !userCancelledRef.current);
+
+        const errorMessage = isTimeout
+          ? "Text analysis request timed out. The stylometric engine did not respond in time."
+          : (err.message || "Failed to evaluate text statement.");
+
+        setError(errorMessage);
       }
     }
   };

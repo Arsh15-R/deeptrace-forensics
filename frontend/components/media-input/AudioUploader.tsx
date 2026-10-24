@@ -12,6 +12,7 @@ export const AudioUploader: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [sha256, setSha256] = useState<string | null>(null);
@@ -84,6 +85,7 @@ export const AudioUploader: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -99,6 +101,7 @@ export const AudioUploader: React.FC = () => {
   const handleAnalyze = async () => {
     if (!file) return;
 
+    userCancelledRef.current = false;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -109,10 +112,10 @@ export const AudioUploader: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    // Stage 1: File ingestion
-    setProgress(20);
+    // Stage 1: File Ingestion & Cryptographic Check
+    setProgress(25);
     setProgressLabel("Computing audio SHA-256 & streaming waveform...");
-    setProgressDetail("Stage 1 of 4: Ingestion & Vault Upload");
+    setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
 
     if (!sha256) {
       try {
@@ -121,46 +124,54 @@ export const AudioUploader: React.FC = () => {
       } catch {}
     }
 
-    if (controller.signal.aborted) return;
+    if (userCancelledRef.current || controller.signal.aborted) {
+      setLoading(false);
+      return;
+    }
 
-    // Stage 2: STFT decomposition
-    setProgress(45);
-    setProgressLabel("Computing Short-Time Fourier Transform (STFT) spectrogram...");
-    setProgressDetail("Stage 2 of 4: Mel-Frequency Filterbank Decomposition");
-
-    // Smooth incremental ticker for vocoder & harmonic inspection
-    let dynamicProgress = 45;
-    progressTimerRef.current = setInterval(() => {
-      dynamicProgress = Math.min(88, dynamicProgress + 3);
-      setProgress(dynamicProgress);
-      if (dynamicProgress >= 70) {
-        setProgressLabel("Analyzing >8 kHz vocoder brickwall cutoffs & SNR floor...");
-        setProgressDetail("Stage 3 of 4: Phase Coherence & Silence Dropouts");
-      }
-    }, 400);
+    // Stage 2: STFT & Neural Vocoder Acoustic Evaluation
+    setProgress(60);
+    setProgressLabel("Evaluating spectral bandwidth, vocoder harmonics & vocal prosody...");
+    setProgressDetail("Stage 2 of 4: Mel-Frequency Filterbank & Glottal Dynamics");
 
     try {
       const record = await analyzeAudio(file, caseRef || undefined, controller.signal);
       cleanupTimers();
 
+      if (userCancelledRef.current) {
+        setLoading(false);
+        return;
+      }
+
       setProgress(100);
-      setProgressLabel("Voice authenticity evaluated. Opening dossier...");
+      setProgressLabel("Voice authenticity certified. Opening dossier...");
       setProgressDetail("Stage 4 of 4: Synthetic Vocoder Calibration Finished");
 
       setTimeout(() => {
         router.push(`/results/${record.id}`);
-      }, 400);
+      }, 350);
     } catch (err: any) {
       cleanupTimers();
-      if (err.name === "AbortError" || controller.signal.aborted) {
-        return;
-      }
-      console.error("Audio analysis error:", err);
-      setError(err?.message || "Failed to analyze audio evidence. Network or engine timeout.");
       setLoading(false);
       setProgress(0);
       setProgressLabel("");
       setProgressDetail("");
+
+      if (userCancelledRef.current) {
+        return;
+      }
+
+      console.error("Audio analysis error:", err);
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timed out") ||
+        (err?.name === "AbortError" && !userCancelledRef.current);
+
+      const errorMessage = isTimeout
+        ? "Audio analysis request timed out. The acoustic examination engine did not complete in time."
+        : (err?.message || "Failed to analyze audio evidence. Engine error or network connection lost.");
+
+      setError(errorMessage);
     }
   };
 

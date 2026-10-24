@@ -1,13 +1,9 @@
 import { CaseRecord, AuditLogRecord, StandardizedAnalysisResult, AdminUserRecord, UserRole } from "./types";
 import { getAuthToken, supabase } from "./supabaseClient";
 
-const isBrowser = typeof window !== "undefined";
-const isLocalhost = isBrowser && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-// On client in production (e.g. Vercel), default to relative URL ("") so same-origin API routes are hit without mixed-content
-const API_BASE = process.env.NEXT_PUBLIC_API_URL
-  ? (process.env.NEXT_PUBLIC_API_URL.includes("localhost") && !isLocalhost ? "" : process.env.NEXT_PUBLIC_API_URL)
-  : (isLocalhost ? "http://127.0.0.1:8000" : "");
+// Client-side API calls always use same-origin relative URLs ("") to hit Next.js API routes,
+// ensuring requests never stall or fail due to offline backend ports or CORS constraints.
+const API_BASE = "";
 
 async function getHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
   const token = await getAuthToken();
@@ -24,15 +20,23 @@ async function getHeaders(extra: Record<string, string> = {}): Promise<Record<st
 }
 
 function createRequestSignal(userSignal?: AbortSignal, timeoutMs = 25000): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  if (!userSignal) return timeoutSignal;
-  if (typeof (AbortSignal as any).any === "function") {
-    return (AbortSignal as any).any([userSignal, timeoutSignal]);
-  }
   const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  userSignal.addEventListener("abort", onAbort, { once: true });
-  timeoutSignal.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException("Analysis request timed out after " + Math.round(timeoutMs / 1000) + " seconds.", "TimeoutError"));
+  }, timeoutMs);
+
+  if (userSignal) {
+    if (userSignal.aborted) {
+      clearTimeout(timer);
+      controller.abort(userSignal.reason);
+    } else {
+      userSignal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        controller.abort(userSignal.reason);
+      }, { once: true });
+    }
+  }
+
   return controller.signal;
 }
 

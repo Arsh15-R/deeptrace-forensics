@@ -12,6 +12,7 @@ export const ImageUploader: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export const ImageUploader: React.FC = () => {
 
   const cleanupTimers = () => {
     if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
+      clearTimeout(progressTimerRef.current);
       progressTimerRef.current = null;
     }
   };
@@ -88,6 +89,7 @@ export const ImageUploader: React.FC = () => {
   };
 
   const cancelAnalysis = useCallback(() => {
+    userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -103,7 +105,7 @@ export const ImageUploader: React.FC = () => {
   const handleAnalyze = async () => {
     if (!file) return;
 
-    // Reset state & create new AbortController
+    userCancelledRef.current = false;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -114,12 +116,11 @@ export const ImageUploader: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    // Stage 1: Real Client-side verification
-    setProgress(20);
+    // Stage 1: File Ingestion & Cryptographic Integrity Check
+    setProgress(25);
     setProgressLabel("Validating image container & computing SHA-256 fingerprint...");
     setProgressDetail("Stage 1 of 4: Ingestion & Vault Integrity Check");
 
-    // Ensure SHA-256 is present
     let currentHash = sha256;
     if (!currentHash) {
       try {
@@ -128,46 +129,56 @@ export const ImageUploader: React.FC = () => {
       } catch {}
     }
 
-    if (controller.signal.aborted) return;
+    if (userCancelledRef.current || controller.signal.aborted) {
+      setLoading(false);
+      return;
+    }
 
-    // Stage 2: Evidence streaming
-    setProgress(45);
-    setProgressLabel("Transmitting encrypted evidence bytes to forensic engine...");
-    setProgressDetail("Stage 2 of 4: Frequency Domain Decomposition");
-
-    // Smooth incremental ticker for Stage 3 inference (caps at 90% until certified)
-    let dynamicProgress = 45;
-    progressTimerRef.current = setInterval(() => {
-      dynamicProgress = Math.min(88, dynamicProgress + 3);
-      setProgress(dynamicProgress);
-      if (dynamicProgress >= 70) {
-        setProgressLabel("Evaluating multi-spectral sensor noise & MobileNetV3 biometrics...");
-        setProgressDetail("Stage 3 of 4: Facial Biometrics & Latent Distribution");
-      }
-    }, 400);
+    // Stage 2: Evidence Transmission & Model Inference
+    setProgress(60);
+    setProgressLabel("Evaluating multi-spectral sensor noise, Bayer CFA & latent biometrics...");
+    setProgressDetail("Stage 2 of 4: Multi-Spectral Frequency & Spatial Decomposition");
 
     try {
       const result = await analyzeImage(file, caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
 
+      if (userCancelledRef.current) {
+        setLoading(false);
+        return;
+      }
+
+      // Stage 4: Calibration Certified & Dossier Ready
       setProgress(100);
       setProgressLabel("Examination certified. Opening forensic dossier...");
       setProgressDetail("Stage 4 of 4: Neyman-Pearson Calibration Complete");
 
       setTimeout(() => {
         router.push(`/results/${result.id}`);
-      }, 400);
+      }, 350);
     } catch (err: any) {
       cleanupTimers();
-      if (err.name === "AbortError" || controller.signal.aborted) {
-        return; // Handled by cancelAnalysis
-      }
-      console.error("Image analysis error:", err);
-      setError(err?.message || "Failed to analyze image evidence. Network or engine timeout.");
       setLoading(false);
       setProgress(0);
       setProgressLabel("");
       setProgressDetail("");
+
+      if (userCancelledRef.current) {
+        // User explicitly clicked Cancel; message already set in cancelAnalysis
+        return;
+      }
+
+      console.error("Image analysis error:", err);
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timed out") ||
+        (err?.name === "AbortError" && !userCancelledRef.current);
+
+      const errorMessage = isTimeout
+        ? "Analysis request timed out. The examination engine did not complete within the required time window."
+        : (err?.message || "Failed to analyze image evidence. Engine error or network connection lost.");
+
+      setError(errorMessage);
     }
   };
 

@@ -10,6 +10,7 @@ export const LinkInput: React.FC = () => {
   const router = useRouter();
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userCancelledRef = useRef<boolean>(false);
 
   const [url, setUrl] = useState<string>("");
   const [caseRef, setCaseRef] = useState<string>("");
@@ -36,6 +37,7 @@ export const LinkInput: React.FC = () => {
   }, []);
 
   const cancelAnalysis = useCallback(() => {
+    userCancelledRef.current = true;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -59,6 +61,7 @@ export const LinkInput: React.FC = () => {
       return;
     }
 
+    userCancelledRef.current = false;
     cleanupTimers();
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -68,23 +71,23 @@ export const LinkInput: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    setProgress(20);
+    setProgress(25);
     setProgressLabel("Evaluating URL destination & SSRF isolation...");
     setProgressDetail("Stage 1 of 4: DNS Resolution & Private Subnet Guard");
 
-    let dynamicProgress = 20;
-    progressTimerRef.current = setInterval(() => {
-      dynamicProgress = Math.min(88, dynamicProgress + 4);
-      setProgress(dynamicProgress);
-      if (dynamicProgress >= 50) {
-        setProgressLabel("Running multimodal forensic sensor artifact analysis...");
-        setProgressDetail("Stage 3 of 4: Neural Feature & Frequency Inspection");
-      }
-    }, 400);
+    // Stage 2: Fetch and analyze
+    setProgress(60);
+    setProgressLabel("Fetching remote stream & evaluating multimodal sensor artifacts...");
+    setProgressDetail("Stage 2 of 4: Remote Retrieval & Neural Frequency Inspection");
 
     try {
       const result = await analyzeLink(url.trim(), caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
+
+      if (userCancelledRef.current) {
+        setLoading(false);
+        return;
+      }
 
       setProgress(100);
       setProgressLabel("Remote evidence analyzed. Opening dossier...");
@@ -95,12 +98,24 @@ export const LinkInput: React.FC = () => {
       }, 350);
     } catch (err: any) {
       cleanupTimers();
-      if (err.name === "AbortError" || controller.signal.aborted) return;
-      setError(err?.message || "Failed to fetch and evaluate media from the specified link.");
       setLoading(false);
       setProgress(0);
       setProgressLabel("");
       setProgressDetail("");
+
+      if (userCancelledRef.current) return;
+
+      console.error("Link analysis error:", err);
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timed out") ||
+        (err?.name === "AbortError" && !userCancelledRef.current);
+
+      const errorMessage = isTimeout
+        ? "Remote media request timed out. The server or target link took too long to respond."
+        : (err?.message || "Failed to fetch and evaluate media from the specified link.");
+
+      setError(errorMessage);
     }
   };
 
