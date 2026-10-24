@@ -92,9 +92,9 @@ export default function AuditPage() {
   return (
     <div className="space-y-6 py-4 max-w-7xl mx-auto">
       {userRole === "checking" ? (
-        <div className="py-20 flex flex-col items-center justify-center space-y-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm shadow-xs">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-          <span className="text-xs text-neutral-500">Verifying administrative credentials...</span>
+        <div className="py-12 flex items-center justify-center space-x-2.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm shadow-xs text-neutral-500 dark:text-neutral-400">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400 flex-shrink-0" />
+          <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">Verifying administrative credentials…</span>
         </div>
       ) : userRole !== "admin" ? (
         <div className="max-w-xl mx-auto py-8">
@@ -150,16 +150,11 @@ export default function AuditPage() {
           </div>
 
           {loading ? (
-            <div className="py-20 flex flex-col items-center justify-center space-y-3">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-              <div className="text-center space-y-1">
-                <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
-                  Querying Immutable Audit Ledger...
-                </span>
-                <p className="text-[11px] text-neutral-400">
-                  Validating event timestamps, operator identities, and verification hashes
-                </p>
-              </div>
+            <div className="py-12 flex items-center justify-center space-x-2.5 text-neutral-500 dark:text-neutral-400">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                Loading audit records…
+              </span>
             </div>
           ) : error ? (
             <div className="p-5 rounded-2xl bg-red-50/90 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 space-y-3">
