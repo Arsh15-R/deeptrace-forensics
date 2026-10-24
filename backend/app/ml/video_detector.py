@@ -24,8 +24,14 @@ class VideoDeepfakeDetector:
     def _initialize(self):
         self.model_name = "TruthLens Temporal-SyncNet + Facial Seam Analyzer"
         self.model_version = "4.2.0-calibrated"
-        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        try:
+            if hasattr(cv2, 'CascadeClassifier') and hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+            else:
+                self.face_cascade = None
+        except Exception:
+            self.face_cascade = None
 
     def analyze_face_seam(self, frame_bgr: np.ndarray, face_box: Tuple[int, int, int, int]) -> Tuple[float, str]:
         """
@@ -123,7 +129,7 @@ class VideoDeepfakeDetector:
 
                 ts = round(f_idx / fps, 2)
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(45, 45))
+                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(45, 45)) if self.face_cascade is not None else []
 
                 frame_suspicion = 18.0
                 anomaly_type = None

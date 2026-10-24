@@ -540,38 +540,75 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // 3. Persist into Supabase Realtime Database (cases table) and Audit Logs
   try {
     const tDbStart = Date.now();
-    const dbTasks = [
-      supabaseServer.from("cases").insert({
-        id: caseRecord.id,
-        case_number: caseRecord.case_number,
-        officer_id: caseRecord.officer_id,
-        officer_name: caseRecord.officer_name,
-        officer_badge: caseRecord.officer_badge,
-        department: caseRecord.department,
-        media_type: caseRecord.media_type,
-        file_name: caseRecord.file_name,
-        source_url: caseRecord.source_url,
-        storage_path: caseRecord.storage_path,
-        file_size_bytes: caseRecord.file_size_bytes,
-        sha256_hash: caseRecord.sha256_hash,
-        mime_type: caseRecord.mime_type,
-        verdict: caseRecord.verdict,
-        calibrated_confidence: caseRecord.calibrated_confidence,
-        confidence_interval_low: caseRecord.confidence_interval_low,
-        confidence_interval_high: caseRecord.confidence_interval_high,
-        per_detector_scores: caseRecord.per_detector_scores,
-        heatmap_storage_path: caseRecord.heatmap_path,
-        timeline_scores: caseRecord.timeline_scores,
-        text_snippet: caseRecord.text_snippet,
-        model_name: caseRecord.model_name,
-        model_version: caseRecord.model_version,
-        known_error_rate_fpr: caseRecord.known_error_rate_fpr,
-        known_error_rate_fnr: caseRecord.known_error_rate_fnr,
-        notes: caseRecord.limitations_notes,
-        created_at: caseRecord.created_at,
-        updated_at: caseRecord.updated_at,
-      }),
-      supabaseServer.from("audit_logs").insert({
+    const caseRow: any = {
+      id: caseRecord.id,
+      case_number: caseRecord.case_number,
+      officer_id: caseRecord.officer_id,
+      officer_name: caseRecord.officer_name,
+      officer_badge: caseRecord.officer_badge,
+      department: caseRecord.department,
+      media_type: caseRecord.media_type,
+      file_name: caseRecord.file_name,
+      source_url: caseRecord.source_url,
+      storage_path: caseRecord.storage_path,
+      file_size_bytes: caseRecord.file_size_bytes,
+      sha256_hash: caseRecord.sha256_hash,
+      mime_type: caseRecord.mime_type,
+      verdict: caseRecord.verdict,
+      calibrated_confidence: caseRecord.calibrated_confidence,
+      confidence_interval_low: caseRecord.confidence_interval_low,
+      confidence_interval_high: caseRecord.confidence_interval_high,
+      per_detector_scores: caseRecord.per_detector_scores,
+      heatmap_storage_path: caseRecord.heatmap_path,
+      timeline_scores: caseRecord.timeline_scores,
+      text_snippet: caseRecord.text_snippet,
+      model_name: caseRecord.model_name,
+      model_version: caseRecord.model_version,
+      known_error_rate_fpr: caseRecord.known_error_rate_fpr,
+      known_error_rate_fnr: caseRecord.known_error_rate_fnr,
+      notes: caseRecord.limitations_notes,
+      created_at: caseRecord.created_at,
+      updated_at: caseRecord.updated_at,
+    };
+
+    // Attempt case insert with unique collision disambiguation and 2.5s timeout
+    const insertPromise = (async () => {
+      let res = await supabaseServer.from("cases").insert(caseRow);
+      if (res.error) {
+        // If unique constraint violation on case_number (Postgres code 23505)
+        if (
+          res.error.code === "23505" ||
+          res.error.message?.includes("cases_case_number_key") ||
+          res.error.message?.includes("duplicate key")
+        ) {
+          const disambiguatedNumber = `${caseRecord.case_number}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+          console.warn(`[ForensicEngine ${caseId}] case_number collision ("${caseRecord.case_number}"). Disambiguating to "${disambiguatedNumber}" and retrying.`);
+          caseRecord.case_number = disambiguatedNumber;
+          caseRow.case_number = disambiguatedNumber;
+          res = await supabaseServer.from("cases").insert(caseRow);
+        }
+      }
+      return res;
+    })();
+
+    const insertOutcome = await Promise.race([
+      insertPromise,
+      new Promise<{ data: null; error: { message: string; code: string } }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: "cases insert timeout", code: "TIMEOUT" } }), 2500)
+      ),
+    ]);
+
+    if (insertOutcome.error) {
+      dbStatus = "degraded";
+      console.warn(`[ForensicEngine ${caseId}] Cases table insert notice:`, insertOutcome.error);
+    } else {
+      console.log(`[ForensicEngine ${caseId}] Case persisted to DB in ${Date.now() - tDbStart}ms with case_number: ${caseRecord.case_number}`);
+    }
+
+    // Insert audit log in background (never blocks response)
+    supabaseServer
+      .from("audit_logs")
+      .insert({
         id: crypto.randomUUID(),
         case_id: caseRecord.id,
         case_number: caseRecord.case_number,
@@ -589,20 +626,15 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
           verdict: caseRecord.verdict,
         },
         created_at: nowIso,
-      }),
-    ];
-
-    const dbOutcome = await Promise.race([
-      Promise.allSettled(dbTasks),
-      new Promise<"TIMEOUT">((resolve) => setTimeout(() => resolve("TIMEOUT"), 2500)),
-    ]);
-
-    if (dbOutcome === "TIMEOUT") {
-      dbStatus = "degraded";
-      console.warn(`[ForensicEngine ${caseId}] DB persistence timed out after 2500ms; marked degraded.`);
-    } else {
-      console.log(`[ForensicEngine ${caseId}] DB persistence completed in ${Date.now() - tDbStart}ms`);
-    }
+      })
+      .then(
+        ({ error: auditErr }) => {
+          if (auditErr) console.warn(`[ForensicEngine ${caseId}] Audit log notice:`, auditErr);
+        },
+        (err) => {
+          console.warn(`[ForensicEngine ${caseId}] Audit log dispatch notice:`, err);
+        }
+      );
   } catch (dbErr) {
     dbStatus = "degraded";
     console.warn(`[ForensicEngine ${caseId}] Supabase persistence warning:`, dbErr);

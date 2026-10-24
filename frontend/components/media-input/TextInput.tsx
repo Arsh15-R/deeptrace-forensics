@@ -193,6 +193,13 @@ export const TextInput: React.FC = () => {
           console.log(`[DeepTrace Client] Text Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}`);
         }
 
+        // Cache full verified case record in sessionStorage for immediate instant dossier rendering
+        try {
+          sessionStorage.setItem(`case_record_${result.id}`, JSON.stringify(result));
+        } catch (cacheErr) {
+          console.warn("[DeepTrace Client] Case record cache notice:", cacheErr);
+        }
+
         setProgress(100);
         setProgressMsg("Linguistic evaluation certified. Opening dossier...");
         setProgressDetail("Stage 4 of 4: Forensic Uncertainty Calibrated");

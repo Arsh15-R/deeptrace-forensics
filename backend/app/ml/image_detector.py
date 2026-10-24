@@ -45,9 +45,15 @@ class ImageDeepfakeDetector:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
-        # Load OpenCV Haar cascade face detector
-        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        # Load OpenCV Haar cascade face detector safely
+        try:
+            if hasattr(cv2, 'CascadeClassifier') and hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+            else:
+                self.face_cascade = None
+        except Exception:
+            self.face_cascade = None
 
     def analyze(self, image_bytes: bytes, filename: str, job_id: str) -> tuple[StandardizedAnalysisResult, bytes]:
         start_time = time.time()
@@ -273,7 +279,7 @@ class ImageDeepfakeDetector:
         # =====================================================================
         # 6. FACIAL & HUMANOID BIOMETRIC LANDMARK INSPECTION
         # =====================================================================
-        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(45, 45))
+        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(45, 45)) if self.face_cascade is not None else []
         face_composite = 30.0
 
         if len(faces) > 0:

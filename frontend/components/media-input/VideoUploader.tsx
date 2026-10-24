@@ -200,6 +200,13 @@ export const VideoUploader: React.FC = () => {
         console.log(`[DeepTrace Client] Stage 3: Received video result: ${result.case_number}, Verdict: ${result.verdict}`);
       }
 
+      // Cache full verified case record in sessionStorage for immediate instant dossier rendering
+      try {
+        sessionStorage.setItem(`case_record_${result.id}`, JSON.stringify(result));
+      } catch (cacheErr) {
+        console.warn("[DeepTrace Client] Case record cache notice:", cacheErr);
+      }
+
       setProgress(100);
       setProgressStatus("Temporal synthesis verified. Preparing case record...");
       setProgressDetail("Stage 4 of 4: Timeline Aggregation & Chain of Custody Signed");

@@ -201,6 +201,13 @@ export const AudioUploader: React.FC = () => {
         console.log(`[DeepTrace Client] Audio Stage 3: Received record: ${record.case_number}, Verdict: ${record.verdict}`);
       }
 
+      // Cache full verified case record in sessionStorage for immediate instant dossier rendering
+      try {
+        sessionStorage.setItem(`case_record_${record.id}`, JSON.stringify(record));
+      } catch (cacheErr) {
+        console.warn("[DeepTrace Client] Case record cache notice:", cacheErr);
+      }
+
       setProgress(100);
       setProgressLabel("Voice authenticity certified. Opening dossier...");
       setProgressDetail("Stage 4 of 4: Synthetic Vocoder Calibration Finished");

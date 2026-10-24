@@ -206,6 +206,13 @@ export const ImageUploader: React.FC = () => {
         console.log(`[DeepTrace Client] Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}, Confidence: ${result.calibrated_confidence}%`);
       }
 
+      // Cache full verified case record in sessionStorage for immediate instant dossier rendering
+      try {
+        sessionStorage.setItem(`case_record_${result.id}`, JSON.stringify(result));
+      } catch (cacheErr) {
+        console.warn("[DeepTrace Client] Case record cache notice:", cacheErr);
+      }
+
       // Cache small thumbnail in sessionStorage safely (capped at 256 KB to prevent QuotaExceededError)
       try {
         if (file && file.size < 256 * 1024) {

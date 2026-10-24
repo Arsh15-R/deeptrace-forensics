@@ -33,19 +33,38 @@ export default function CaseResultsPage() {
         const item = sessionStorage.getItem(`evidence_preview_${id}`);
         if (item) setCachedPreview(item);
       } catch {}
+
+      try {
+        const cachedStr = sessionStorage.getItem(`case_record_${id}`);
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr);
+          if (cached && (cached.id === id || cached.case_number === id)) {
+            setCaseData(cached);
+            setLoading(false);
+          }
+        }
+      } catch {}
     }
   }, [id]);
 
   const loadCaseRecord = React.useCallback(() => {
     if (!id) return;
-    setLoading(true);
+    setCaseData((prev) => {
+      if (!prev) setLoading(true);
+      return prev;
+    });
     setError(null);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
-      setError("Request timed out loading case record. Please retry.");
-      setLoading(false);
+      setCaseData((prev) => {
+        if (!prev) {
+          setError("Request timed out loading case record. Please retry.");
+          setLoading(false);
+        }
+        return prev;
+      });
     }, 12000);
 
     getCase(id, controller.signal)
@@ -57,8 +76,16 @@ export default function CaseResultsPage() {
       .catch((err) => {
         clearTimeout(timeout);
         if (err.name === "AbortError") return;
-        setError(err.message || "Failed to load case record from database.");
-        setLoading(false);
+        setCaseData((prev) => {
+          if (!prev) {
+            setError(err.message || "Failed to load case record from database.");
+            setLoading(false);
+            return null;
+          }
+          // Already have cached case record from current session, keep it
+          setLoading(false);
+          return prev;
+        });
       });
   }, [id]);
 
