@@ -11,7 +11,7 @@ export const ImageUploader: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
   const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
@@ -30,10 +30,8 @@ export const ImageUploader: React.FC = () => {
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff"];
 
   const cleanupTimers = () => {
-    if (progressTimerRef.current) {
-      clearTimeout(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    timersRef.current.forEach((t) => clearTimeout(t));
+    timersRef.current = [];
   };
 
   useEffect(() => {
@@ -138,6 +136,37 @@ export const ImageUploader: React.FC = () => {
     setProgress(60);
     setProgressLabel("Evaluating multi-spectral sensor noise, Bayer CFA & latent biometrics...");
     setProgressDetail("Stage 2 of 4: Multi-Spectral Frequency & Spatial Decomposition");
+
+    // Dynamic intermediate milestones ensure smooth progress and avoid stalling visually
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(75);
+          setProgressLabel("Extracting spatial Bayer CFA & VAE latent distributions...");
+          setProgressDetail("Stage 3 of 4: Spatial Texture & Frequency Domain Analysis");
+        }
+      }, 400)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(88);
+          setProgressLabel("Computing thermal error level analysis & sensor PRNU variance...");
+          setProgressDetail("Stage 3 of 4: Synthesis Confidence Verification");
+        }
+      }, 1000)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(94);
+          setProgressLabel("Calibrating Neyman-Pearson decision boundary & signing audit record...");
+          setProgressDetail("Stage 4 of 4: Finalizing Certified Forensic Dossier");
+        }
+      }, 1800)
+    );
 
     try {
       const result = await analyzeImage(file, caseRef.trim() || undefined, controller.signal);

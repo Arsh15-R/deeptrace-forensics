@@ -13,25 +13,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ detail: "No target URL provided." }, { status: 400 });
     }
 
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
+    const backendUrl = process.env.BACKEND_URL;
+    if (backendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
 
-      const backendRes = await fetch(`${backendUrl}/api/cases/analyze/link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, case_reference: caseRef }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+        const backendRes = await fetch(`${backendUrl}/api/cases/analyze/link`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, case_reference: caseRef }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-      if (backendRes.ok) {
-        const data = await backendRes.json();
-        return NextResponse.json(data);
+        if (backendRes.ok) {
+          const data = await backendRes.json();
+          return NextResponse.json(data);
+        }
+      } catch {
+        // Backend offline; proceed with high-precision serverless engine
       }
-    } catch {
-      // Backend not running
     }
 
     const caseRecord = await executeForensicAnalysis({

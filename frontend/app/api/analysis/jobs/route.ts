@@ -34,26 +34,28 @@ export async function POST(request: NextRequest) {
       if (body.media_type) mediaType = body.media_type;
     }
 
-    // Try proxying to backend if available
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const proxyRes = await fetch(`${backendUrl}/api/analysis/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": contentType },
-        body: request.body,
-        signal: controller.signal,
-        // @ts-ignore
-        duplex: "half",
-      });
-      clearTimeout(timeout);
-      if (proxyRes.ok) {
-        const data = await proxyRes.json();
-        return NextResponse.json(data, { status: 202 });
+    // Try proxying to backend only if explicitly configured
+    const backendUrl = process.env.BACKEND_URL;
+    if (backendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const proxyRes = await fetch(`${backendUrl}/api/analysis/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": contentType },
+          body: request.body,
+          signal: controller.signal,
+          // @ts-ignore
+          duplex: "half",
+        });
+        clearTimeout(timeout);
+        if (proxyRes.ok) {
+          const data = await proxyRes.json();
+          return NextResponse.json(data, { status: 202 });
+        }
+      } catch {
+        // Backend offline; proceed with serverless engine
       }
-    } catch {
-      // Backend not running
     }
 
     let buffer: Buffer | undefined;

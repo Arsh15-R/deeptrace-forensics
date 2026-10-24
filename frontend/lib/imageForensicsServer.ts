@@ -1,4 +1,5 @@
 import jpeg from "jpeg-js";
+import zlib from "zlib";
 import { Verdict } from "@/lib/types";
 
 export interface ImageForensicAnalysis {
@@ -17,6 +18,90 @@ export interface ImageForensicAnalysis {
     detail: string;
   }[];
   technicalMetadata: Record<string, any>;
+}
+
+/**
+ * Universal zero-dependency image decoder supporting JPEG and PNG scanline decoding.
+ */
+function decodeImageBuffer(buf: Buffer): { width: number; height: number; data: Uint8Array } | null {
+  // Check for PNG signature
+  if (buf.length > 33 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    try {
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      const bitDepth = buf[24];
+      const colorType = buf[25];
+      if (bitDepth === 8 && (colorType === 6 || colorType === 2)) {
+        const bytesPerPixel = colorType === 6 ? 4 : 3;
+        let pos = 8;
+        const idatParts: Buffer[] = [];
+        while (pos + 8 <= buf.length) {
+          const len = buf.readUInt32BE(pos);
+          const type = buf.toString("ascii", pos + 4, pos + 8);
+          if (type === "IDAT") {
+            idatParts.push(buf.subarray(pos + 8, pos + 8 + len));
+          }
+          pos += 12 + len;
+        }
+
+        const decompressed = zlib.inflateSync(Buffer.concat(idatParts));
+        const scanlineLen = 1 + width * bytesPerPixel;
+        const out = new Uint8Array(width * height * 4);
+        const prevRow = new Uint8Array(width * bytesPerPixel);
+        const currRow = new Uint8Array(width * bytesPerPixel);
+
+        for (let y = 0; y < height; y++) {
+          const rowStart = y * scanlineLen;
+          const filter = decompressed[rowStart];
+          for (let i = 0; i < width * bytesPerPixel; i++) {
+            const raw = decompressed[rowStart + 1 + i];
+            const a = i >= bytesPerPixel ? currRow[i - bytesPerPixel] : 0;
+            const bVal = prevRow[i];
+            const c = i >= bytesPerPixel ? prevRow[i - bytesPerPixel] : 0;
+            let val = raw;
+            if (filter === 1) val = (raw + a) & 0xff;
+            else if (filter === 2) val = (raw + bVal) & 0xff;
+            else if (filter === 3) val = (raw + Math.floor((a + bVal) / 2)) & 0xff;
+            else if (filter === 4) {
+              const p = a + bVal - c;
+              const pa = Math.abs(p - a);
+              const pb = Math.abs(p - bVal);
+              const pc = Math.abs(p - c);
+              const pr = pa <= pb && pa <= pc ? a : pb <= pc ? bVal : c;
+              val = (raw + pr) & 0xff;
+            }
+            currRow[i] = val;
+          }
+          for (let x = 0; x < width; x++) {
+            const dst = (y * width + x) * 4;
+            if (colorType === 6) {
+              const src = x * 4;
+              out[dst] = currRow[src];
+              out[dst + 1] = currRow[src + 1];
+              out[dst + 2] = currRow[src + 2];
+              out[dst + 3] = currRow[src + 3];
+            } else {
+              const src = x * 3;
+              out[dst] = currRow[src];
+              out[dst + 1] = currRow[src + 1];
+              out[dst + 2] = currRow[src + 2];
+              out[dst + 3] = 255;
+            }
+          }
+          prevRow.set(currRow);
+        }
+        return { width, height, data: out };
+      }
+    } catch {
+      // Fall through to JPEG decoder or return null
+    }
+  }
+
+  try {
+    return jpeg.decode(buf, { useTArray: true });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -42,12 +127,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       rawStr
     );
 
-  let decoded: { width: number; height: number; data: Uint8Array } | null = null;
-  try {
-    decoded = jpeg.decode(buf, { useTArray: true });
-  } catch {
-    // Non-JPEG format (e.g. raw PNG)
-  }
+  const decoded = decodeImageBuffer(buf);
 
   let flatRatio = 0;
   let disparityIndex = 0;

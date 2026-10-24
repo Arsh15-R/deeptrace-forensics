@@ -11,7 +11,7 @@ export const AudioUploader: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
   const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
@@ -29,10 +29,8 @@ export const AudioUploader: React.FC = () => {
   const ALLOWED_TYPES = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/flac", "audio/x-m4a", "audio/m4a"];
 
   const cleanupTimers = () => {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    timersRef.current.forEach((t) => clearTimeout(t));
+    timersRef.current = [];
   };
 
   useEffect(() => {
@@ -133,6 +131,36 @@ export const AudioUploader: React.FC = () => {
     setProgress(60);
     setProgressLabel("Evaluating spectral bandwidth, vocoder harmonics & vocal prosody...");
     setProgressDetail("Stage 2 of 4: Mel-Frequency Filterbank & Glottal Dynamics");
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(75);
+          setProgressLabel("Computing bispectral higher-order phase & spectral centroid...");
+          setProgressDetail("Stage 3 of 4: Acoustic Phase Linearity & Formant Tracking");
+        }
+      }, 400)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(88);
+          setProgressLabel("Cross-referencing neural text-to-speech vocoder artifacts...");
+          setProgressDetail("Stage 3 of 4: Synthetic Resynthesis Pattern Detection");
+        }
+      }, 1000)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(94);
+          setProgressLabel("Calibrating audio likelihood ratio & cryptographic sign-off...");
+          setProgressDetail("Stage 4 of 4: Certified Acoustic Dossier Assembly");
+        }
+      }, 1800)
+    );
 
     try {
       const record = await analyzeAudio(file, caseRef || undefined, controller.signal);

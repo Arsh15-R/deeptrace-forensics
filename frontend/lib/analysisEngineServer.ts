@@ -412,42 +412,64 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   const heatmapRelPath = input.mediaType === "image" ? `heatmaps/${caseId}.png` : null;
   const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
 
-  // 2. Persist Evidence File & Anomaly Heatmap to Supabase Storage Vault
+  // 2. Persist Evidence File & Anomaly Heatmap to Supabase Storage Vault concurrently
   if (input.buffer) {
-    // Map mime types to ensure acceptance by bucket policy
     let uploadMime = mimeType;
     if (uploadMime === "image/jpg") uploadMime = "image/jpeg";
-    if (!["image/jpeg", "image/png", "image/webp", "audio/wav", "audio/mpeg", "audio/ogg", "application/pdf"].includes(uploadMime)) {
+    if (
+      ![
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "audio/wav",
+        "audio/mpeg",
+        "audio/ogg",
+        "application/pdf",
+      ].includes(uploadMime)
+    ) {
       if (input.mediaType === "image") uploadMime = "image/jpeg";
       else if (input.mediaType === "audio") uploadMime = "audio/wav";
       else uploadMime = "application/pdf";
     }
 
-    try {
-      await supabaseServer.storage
+    const uploadTasks: Promise<any>[] = [];
+
+    uploadTasks.push(
+      supabaseServer.storage
         .from("evidence-vault")
         .upload(storageRelPath, input.buffer, {
           contentType: uploadMime,
           upsert: true,
-        });
-    } catch (storageErr) {
-      console.warn("Evidence upload to Supabase storage vault warning:", storageErr);
-    }
+        })
+        .catch((storageErr) => {
+          console.warn("Evidence upload to Supabase storage vault notice:", storageErr);
+        })
+    );
 
-    // For image media, generate authentic forensic ELA thermal anomaly heatmap and upload
     if (input.mediaType === "image" && heatmapRelPath) {
       try {
         const heatmapBuffer = generateForensicHeatmapPng(input.buffer, verdict, confidence);
-        await supabaseServer.storage
-          .from("evidence-vault")
-          .upload(heatmapRelPath, heatmapBuffer, {
-            contentType: "image/png",
-            upsert: true,
-          });
-      } catch (heatmapErr) {
-        console.warn("Heatmap upload to Supabase storage vault warning:", heatmapErr);
+        uploadTasks.push(
+          supabaseServer.storage
+            .from("evidence-vault")
+            .upload(heatmapRelPath, heatmapBuffer, {
+              contentType: "image/png",
+              upsert: true,
+            })
+            .catch((heatmapErr) => {
+              console.warn("Heatmap upload to Supabase storage vault notice:", heatmapErr);
+            })
+        );
+      } catch (err) {
+        console.warn("Heatmap buffer synthesis notice:", err);
       }
     }
+
+    // Race uploads with a fast 2.0s bounded window so slow storage networks never stall the user
+    await Promise.race([
+      Promise.allSettled(uploadTasks),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
   }
 
   const publicEvidenceUrl = `${supabaseStorageBase}/${storageRelPath}`;
@@ -493,59 +515,64 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     updated_at: nowIso,
   };
 
-  // 3. Persist into Supabase Realtime Database (cases table)
+  // 3. Persist into Supabase Realtime Database (cases table) and Audit Logs
   try {
-    await supabaseServer.from("cases").insert({
-      id: caseRecord.id,
-      case_number: caseRecord.case_number,
-      officer_id: caseRecord.officer_id,
-      officer_name: caseRecord.officer_name,
-      officer_badge: caseRecord.officer_badge,
-      department: caseRecord.department,
-      media_type: caseRecord.media_type,
-      file_name: caseRecord.file_name,
-      source_url: caseRecord.source_url,
-      storage_path: caseRecord.storage_path,
-      file_size_bytes: caseRecord.file_size_bytes,
-      sha256_hash: caseRecord.sha256_hash,
-      mime_type: caseRecord.mime_type,
-      verdict: caseRecord.verdict,
-      calibrated_confidence: caseRecord.calibrated_confidence,
-      confidence_interval_low: caseRecord.confidence_interval_low,
-      confidence_interval_high: caseRecord.confidence_interval_high,
-      per_detector_scores: caseRecord.per_detector_scores,
-      heatmap_storage_path: caseRecord.heatmap_path,
-      timeline_scores: caseRecord.timeline_scores,
-      text_snippet: caseRecord.text_snippet,
-      model_name: caseRecord.model_name,
-      model_version: caseRecord.model_version,
-      known_error_rate_fpr: caseRecord.known_error_rate_fpr,
-      known_error_rate_fnr: caseRecord.known_error_rate_fnr,
-      notes: caseRecord.limitations_notes,
-      created_at: caseRecord.created_at,
-      updated_at: caseRecord.updated_at,
-    });
-
-    // 4. Record Audit Log Entry in Supabase
-    await supabaseServer.from("audit_logs").insert({
-      id: crypto.randomUUID(),
-      case_id: caseRecord.id,
-      case_number: caseRecord.case_number,
-      user_id: caseRecord.officer_id,
-      user_email: input.officerEmail || "arshrana2468@gmail.com",
-      user_role: "admin",
-      action: "EVIDENCE_UPLOADED",
-      ip_address: "127.0.0.1",
-      user_agent: "DeepTrace-NextApp/v4.3",
-      details: {
-        file_name: caseRecord.file_name,
+    const dbTasks = [
+      supabaseServer.from("cases").insert({
+        id: caseRecord.id,
+        case_number: caseRecord.case_number,
+        officer_id: caseRecord.officer_id,
+        officer_name: caseRecord.officer_name,
+        officer_badge: caseRecord.officer_badge,
+        department: caseRecord.department,
         media_type: caseRecord.media_type,
+        file_name: caseRecord.file_name,
+        source_url: caseRecord.source_url,
+        storage_path: caseRecord.storage_path,
         file_size_bytes: caseRecord.file_size_bytes,
-        sha256: caseRecord.sha256_hash,
+        sha256_hash: caseRecord.sha256_hash,
+        mime_type: caseRecord.mime_type,
         verdict: caseRecord.verdict,
-      },
-      created_at: nowIso,
-    });
+        calibrated_confidence: caseRecord.calibrated_confidence,
+        confidence_interval_low: caseRecord.confidence_interval_low,
+        confidence_interval_high: caseRecord.confidence_interval_high,
+        per_detector_scores: caseRecord.per_detector_scores,
+        heatmap_storage_path: caseRecord.heatmap_path,
+        timeline_scores: caseRecord.timeline_scores,
+        text_snippet: caseRecord.text_snippet,
+        model_name: caseRecord.model_name,
+        model_version: caseRecord.model_version,
+        known_error_rate_fpr: caseRecord.known_error_rate_fpr,
+        known_error_rate_fnr: caseRecord.known_error_rate_fnr,
+        notes: caseRecord.limitations_notes,
+        created_at: caseRecord.created_at,
+        updated_at: caseRecord.updated_at,
+      }),
+      supabaseServer.from("audit_logs").insert({
+        id: crypto.randomUUID(),
+        case_id: caseRecord.id,
+        case_number: caseRecord.case_number,
+        user_id: caseRecord.officer_id,
+        user_email: input.officerEmail || "arshrana2468@gmail.com",
+        user_role: "admin",
+        action: "EVIDENCE_UPLOADED",
+        ip_address: "127.0.0.1",
+        user_agent: "DeepTrace-NextApp/v4.3",
+        details: {
+          file_name: caseRecord.file_name,
+          media_type: caseRecord.media_type,
+          file_size_bytes: caseRecord.file_size_bytes,
+          sha256: caseRecord.sha256_hash,
+          verdict: caseRecord.verdict,
+        },
+        created_at: nowIso,
+      }),
+    ];
+
+    await Promise.race([
+      Promise.allSettled(dbTasks),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
   } catch (dbErr) {
     console.warn("Supabase persistence warning in analysisEngineServer:", dbErr);
   }

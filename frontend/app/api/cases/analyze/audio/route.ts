@@ -16,27 +16,29 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const proxyForm = new FormData();
-      proxyForm.append("file", file);
-      if (caseRef) proxyForm.append("case_ref", caseRef);
+    const backendUrl = process.env.BACKEND_URL;
+    if (backendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const proxyForm = new FormData();
+        proxyForm.append("file", file);
+        if (caseRef) proxyForm.append("case_ref", caseRef);
 
-      const backendRes = await fetch(`${backendUrl}/api/cases/analyze/audio`, {
-        method: "POST",
-        body: proxyForm,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+        const backendRes = await fetch(`${backendUrl}/api/cases/analyze/audio`, {
+          method: "POST",
+          body: proxyForm,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-      if (backendRes.ok) {
-        const data = await backendRes.json();
-        return NextResponse.json(data);
+        if (backendRes.ok) {
+          const data = await backendRes.json();
+          return NextResponse.json(data);
+        }
+      } catch {
+        // Backend offline; proceed with high-precision serverless engine
       }
-    } catch {
-      // Backend not running
     }
 
     const caseRecord = await executeForensicAnalysis({

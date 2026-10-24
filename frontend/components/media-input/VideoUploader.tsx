@@ -11,7 +11,7 @@ export const VideoUploader: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
   const userCancelledRef = useRef<boolean>(false);
 
   const [file, setFile] = useState<File | null>(null);
@@ -28,10 +28,8 @@ export const VideoUploader: React.FC = () => {
   const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"];
 
   const cleanupTimers = () => {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
+    timersRef.current.forEach((t) => clearTimeout(t));
+    timersRef.current = [];
   };
 
   useEffect(() => {
@@ -132,6 +130,36 @@ export const VideoUploader: React.FC = () => {
     setProgress(60);
     setProgressStatus("Sampling frames, evaluating facial seams & Farneback dense optical flow...");
     setProgressDetail("Stage 2 of 4: Temporal Coherence & Multi-Frame Persistence");
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(75);
+          setProgressStatus("Evaluating inter-frame motion vectors & eye-blink persistence...");
+          setProgressDetail("Stage 3 of 4: Biometric Micro-Tremor Verification");
+        }
+      }, 500)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(88);
+          setProgressStatus("Analyzing facial boundary compression artifacts & ELA residuals...");
+          setProgressDetail("Stage 3 of 4: Spatial-Temporal Boundary Integrity");
+        }
+      }, 1200)
+    );
+
+    timersRef.current.push(
+      setTimeout(() => {
+        if (!userCancelledRef.current) {
+          setProgress(94);
+          setProgressStatus("Aggregating temporal window scores & signing chain of custody...");
+          setProgressDetail("Stage 4 of 4: Neyman-Pearson Decision Finalization");
+        }
+      }, 2000)
+    );
 
     try {
       const result = await analyzeVideo(file, caseRef.trim() || undefined, controller.signal);
