@@ -125,6 +125,23 @@ const LLM_MARKERS: RegExp[] = [
   /\bas mentioned (?:earlier|above)\b/i,
   /\bstep-by-step\b/i,
   /\bplease note that\b/i,
+
+  // Profile, Memory & Bio Summary Synthesis Markers (ChatGPT / Claude dossiers)
+  /\byou seem especially interested in\b/i,
+  /\bprojects you(?:'ve| have) discussed\b/i,
+  /\bsome projects you(?:'ve| have) discussed include\b/i,
+  /\byou(?:'ve| have) mentioned\b/i,
+  /\byou(?:'re| are) building a foundation in\b/i,
+  /\byour responsibilities and activities include\b/i,
+  /\byour responsibilities include\b/i,
+  /\brather than learning only theory\b/i,
+  /\byou(?:'ve| have) discussed progressing through\b/i,
+  /\byou(?:'re| are) currently in your\b/i,
+  /\byour academic journey\b/i,
+  /\byour leadership journey\b/i,
+  /\byour technical skills\b/i,
+  /\byour projects\b/i,
+  /\bemerging interests:\b/i,
 ];
 
 /**
@@ -414,17 +431,17 @@ function analyzeTextStylometryPureTs(
             score: 50.0,
             weight: 0.5,
             flagged: false,
-            status: "Inconclusive (<20 words)",
-            detail: "Text corpus contains fewer than 20 words; statistical Zipfian stylometry and syntactic burstiness require a larger text body.",
+            status: `Inconclusive (${wordCount} words)`,
+            detail: `Text corpus contains only ${wordCount} word${wordCount === 1 ? "" : "s"}; statistical Zipfian stylometry and syntactic burstiness require a meaningful text body (minimum 20 words).`,
           },
         ],
       },
       keyFindings: [
-        "Text sample contains fewer than 20 words; statistical burstiness and Zipfian stylometry require a larger text body.",
+        `Sample contains only ${wordCount} word${wordCount === 1 ? "" : "s"}. Forensic text verification requires at least 20 words of natural language syntax to distinguish authentic authorial variation from generative AI.`,
       ],
       flaggedPassages: [],
       technicalMetadata: { WordCount: wordCount, SentenceCount: sentenceCount },
-      evidenceSummary: "Insufficient text volume (<20 words) to perform reliable statistical stylometry or entropy analysis.",
+      evidenceSummary: `Insufficient text volume (${wordCount} words) to perform reliable statistical stylometry or entropy analysis. A minimum of 20 words is required for linguistic certainty.`,
     };
   }
 
@@ -450,7 +467,7 @@ function analyzeTextStylometryPureTs(
   }
   const hapaxRatio = hapaxCount / wordCount;
 
-  // 5. LLM Transitional Clichés
+  // 5. LLM Transitional Clichés & Synthetic Structures
   let markerHits = 0;
   const flaggedMarkers: string[] = [];
   for (const pat of LLM_MARKERS) {
@@ -461,21 +478,31 @@ function analyzeTextStylometryPureTs(
     }
   }
 
+  // Detect formulaic structured bullet list items with colons (- Name: Detail)
+  const bulletColonMatches = text.match(/(?:^|\n)\s*[-*•]\s*[^:\n]{2,30}:\s*.+/g) || [];
+  if (bulletColonMatches.length >= 4) {
+    markerHits += Math.min(bulletColonMatches.length, 8);
+  }
+
   // 6. Passage Flagging
   const flaggedPassages: FlaggedPassage[] = [];
-  const paragraphs = text.split("\n").map((p) => p.trim()).filter((p) => p.length > 25);
-  for (const p of paragraphs.slice(0, 5)) {
+  const paragraphs = text.split("\n").map((p) => p.trim()).filter((p) => p.length > 20);
+  for (const p of paragraphs) {
     let pHits = 0;
     for (const pat of LLM_MARKERS) {
       if (pat.test(p)) pHits++;
     }
-    if (pHits >= 1 || (burstiness < 0.25 && pHits >= 1)) {
+    const hasBulletColon = /^\s*[-*•]\s*[^:\n]{2,30}:\s*.+/.test(p);
+    if (pHits >= 1 || hasBulletColon) {
       flaggedPassages.push({
         text: p.slice(0, 200) + (p.length > 200 ? "..." : ""),
-        reason: `Contains ${pHits} characteristic LLM formulaic transition markers and low syntactic burstiness (CV: ${burstiness.toFixed(2)})`,
+        reason: pHits >= 1
+          ? `Contains ${pHits} characteristic LLM formulaic transition marker(s)`
+          : "Conforms to formulaic synthetic bullet-item structure",
         score: 75.0,
       });
     }
+    if (flaggedPassages.length >= 6) break;
   }
 
   // 7. Multi-Factor Scoring

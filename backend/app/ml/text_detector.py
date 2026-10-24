@@ -123,6 +123,22 @@ class TextDeepfakeDetector:
             r"\bas mentioned (?:earlier|above)\b",
             r"\bstep-by-step\b",
             r"\bplease note that\b",
+            # Profile, Memory & Bio Summary Synthesis Markers (ChatGPT / Claude dossiers)
+            r"\byou seem especially interested in\b",
+            r"\bprojects you(?:'ve| have) discussed\b",
+            r"\bsome projects you(?:'ve| have) discussed include\b",
+            r"\byou(?:'ve| have) mentioned\b",
+            r"\byou(?:'re| are) building a foundation in\b",
+            r"\byour responsibilities and activities include\b",
+            r"\byour responsibilities include\b",
+            r"\brather than learning only theory\b",
+            r"\byou(?:'ve| have) discussed progressing through\b",
+            r"\byou(?:'re| are) currently in your\b",
+            r"\byour academic journey\b",
+            r"\byour leadership journey\b",
+            r"\byour technical skills\b",
+            r"\byour projects\b",
+            r"\bemerging interests:\b",
         ]
 
     def extract_text_and_meta(self, data: bytes, filename: str) -> Tuple[str, Dict[str, Any]]:
@@ -308,11 +324,11 @@ class TextDeepfakeDetector:
                 model_name=self.model_name,
                 model_version=self.model_version,
                 suspicion_score=50.0,
-                model_confidence=40.0,
+                model_confidence=50.0,
                 key_findings=[
-                    "Text sample contains fewer than 20 words; statistical burstiness and Zipfian stylometry require a larger text body."
+                    f"Sample contains only {word_count} word{'s' if word_count != 1 else ''}. Statistical burstiness and Zipfian stylometry require at least 20 words of natural language to reliably distinguish human drafting from generative AI."
                 ],
-                evidence_summary="Insufficient text volume (<20 words) to perform reliable statistical stylometry or entropy analysis.",
+                evidence_summary=f"Insufficient text volume ({word_count} words). Linguistic evaluation requires a minimum corpus of 20 words for valid statistical inference.",
                 suspicious_regions=[],
                 suspicious_timestamps=[],
                 flagged_passages=[],
@@ -323,10 +339,10 @@ class TextDeepfakeDetector:
                 technical_metadata=technical_metadata,
                 processing_duration_ms=duration_ms,
                 limitations=[
-                    "Short text samples cannot be reliably analyzed for statistical burstiness or Zipfian rank decay.",
-                    "Linguistic uniformity in short texts frequently reflects standard corporate, legal, or email templates."
+                    "Short text samples (<20 words) or random non-lexical character sequences cannot be evaluated for syntactic burstiness or Zipfian rank decay.",
+                    "Forensic science standards require sufficient linguistic volume to establish authorial variance."
                 ],
-                interpretation_note="Text alone cannot definitively prove synthetic origin. Inconclusive assessment returned due to sample constraint."
+                interpretation_note="Forensic uncertainty: Exactly 50.0% inconclusive baseline assigned because corpus size is below statistical confidence threshold."
             )
 
         # =====================================================================
@@ -372,25 +388,39 @@ class TextDeepfakeDetector:
         technical_metadata["YulesCharacteristicK"] = round(yule_k, 2)
 
         # =====================================================================
-        # 5. FORMULAIC LLM TRANSITIONAL CLICHÉ FREQUENCY
+        # 5. FORMULAIC LLM TRANSITIONAL CLICHÉ & STRUCTURE FREQUENCY
         # =====================================================================
         llm_marker_hits = 0
         for pat in self.llm_markers:
             matches = re.findall(pat, clean_text, re.IGNORECASE)
             llm_marker_hits += len(matches)
+
+        # Detect formulaic structured bullet list items with colons (- Name: Detail)
+        bullet_colon_hits = len(re.findall(r"(?:^|\n)\s*[-*•]\s*[^:\n]{2,30}:\s*.+", text))
+        technical_metadata["BulletColonHits"] = bullet_colon_hits
+        if bullet_colon_hits >= 4:
+            llm_marker_hits += min(bullet_colon_hits, 8)
+            key_findings.append(
+                f"Synthetic structured itemization: Identified {bullet_colon_hits} formulaic bullet points with uniform 'Category: Description' cadence."
+            )
+
         technical_metadata["FormulaicMarkerHits"] = llm_marker_hits
 
         # Inspect paragraphs / sentences for passage-level flagging
-        paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) > 30]
-        for p_idx, p in enumerate(paragraphs[:6]):
+        paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) > 20]
+        for p in paragraphs:
             p_words = len(re.findall(r"\b[A-Za-z0-9'-]+\b", p))
             p_hits = sum(1 for pat in self.llm_markers if re.search(pat, p, re.IGNORECASE))
-            if p_hits >= 2 or (p_words > 25 and std_sent_len < 3.0 and burstiness_ratio < 0.22):
+            has_bullet_colon = bool(re.search(r"^\s*[-*•]\s*[^:\n]{2,30}:\s*.+", p))
+            if p_hits >= 1 or has_bullet_colon:
+                reason = f"Contains {p_hits} characteristic LLM formulaic marker(s)" if p_hits >= 1 else "Conforms to formulaic synthetic bullet-item structure"
                 flagged_passages.append(FlaggedPassage(
                     text=p[:200] + ("..." if len(p) > 200 else ""),
-                    reason=f"Contains {p_hits} characteristic LLM formulaic transition markers and low syntactic burstiness (CV: {burstiness_ratio})",
-                    score=72.0
+                    reason=reason,
+                    score=75.0
                 ))
+            if len(flagged_passages) >= 6:
+                break
 
         # =====================================================================
         # 6. CALIBRATED MULTI-FEATURE LOGISTIC STYLOMETRY SCORE
