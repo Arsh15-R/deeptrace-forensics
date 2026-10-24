@@ -68,8 +68,10 @@ export const TextInput: React.FC = () => {
     if (e) e.preventDefault();
     if (!text.trim() && !docFile) return;
 
-    if (!docFile && text.trim().length < 20) {
-      setError("Please provide at least 20 characters of text for statistical evaluation.");
+    if (!docFile && wordCount < 20) {
+      setError(
+        `Linguistic stylometry requires at least 20 words of natural text for authorial analysis (currently ${wordCount} word${wordCount === 1 ? "" : "s"}). Please enter a complete statement or paragraph.`
+      );
       return;
     }
 
@@ -283,11 +285,15 @@ export const TextInput: React.FC = () => {
             <span>
               <b>{charCount}</b> characters
             </span>
-            {wordCount < 40 && wordCount > 0 && (
+            {wordCount < 20 && wordCount > 0 ? (
               <span className="text-amber-500 font-medium">
-                (&lt;40 words: Inconclusive calibration guard)
+                (Need &ge; 20 words for forensic evaluation)
               </span>
-            )}
+            ) : wordCount >= 20 ? (
+              <span className="text-emerald-500 font-medium">
+                (&ge; 20 words: Valid corpus for stylometry)
+              </span>
+            ) : null}
           </div>
 
           <div className="flex items-center space-x-2">
