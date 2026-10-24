@@ -44,8 +44,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python virtual env lib folders (do not ignore frontend/lib)
+!frontend/lib/
+!frontend/lib/**
 parts/
 sdist/
 var/

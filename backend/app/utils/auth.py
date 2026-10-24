@@ -20,6 +20,8 @@ class CurrentUser(BaseModel):
     department: str
     role: str  # 'viewer', 'officer', or 'admin'
     is_active: bool = True
+    avatar_url: Optional[str] = None
+    provider: str = "google"
 
 # In-memory token cache: { token_str: (CurrentUser, expiry_timestamp) }
 _TOKEN_CACHE: Dict[str, tuple[CurrentUser, float]] = {}
@@ -43,7 +45,9 @@ def _sync_with_db(user_id: str, email: str, full_name: str, avatar_url: Optional
             badge_number=db_user.badge_number or f"GOOG-{db_user.id[:4].upper()}",
             department=db_user.department or "Forensics & Media Integrity",
             role=db_user.role,
-            is_active=db_user.is_active
+            is_active=db_user.is_active,
+            avatar_url=db_user.avatar_url or avatar_url,
+            provider=db_user.provider or "google"
         )
     else:
         # First-time Google user provisioning
@@ -74,7 +78,9 @@ def _sync_with_db(user_id: str, email: str, full_name: str, avatar_url: Optional
             badge_number=new_user.badge_number or "OFF",
             department=new_user.department or "Forensics",
             role=new_user.role,
-            is_active=True
+            is_active=True,
+            avatar_url=new_user.avatar_url,
+            provider=new_user.provider
         )
 
 def _verify_with_supabase_api(token: str) -> Optional[CurrentUser]:
@@ -202,7 +208,9 @@ async def get_current_user(
                 badge_number=default_admin.badge_number or "GOOG-ARSH",
                 department=default_admin.department or "Department Administrator",
                 role=default_admin.role,
-                is_active=True
+                is_active=True,
+                avatar_url=default_admin.avatar_url,
+                provider=default_admin.provider or "google"
             )
 
     raise HTTPException(

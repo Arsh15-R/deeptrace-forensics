@@ -134,3 +134,12 @@ def test_delete_user_and_protect_admin():
         assert resp_admin_del.status_code == 400
         assert "cannot delete" in resp_admin_del.json()["detail"].lower()
 
+def test_auth_me_returns_server_side_role():
+    resp = client.get("/api/auth/me")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "role" in data
+    assert data["role"] in ["admin", "officer", "viewer"]
+    assert "email" in data
+    assert data["is_active"] is True
+

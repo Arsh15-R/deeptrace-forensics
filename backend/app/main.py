@@ -11,6 +11,7 @@ from app.api.routes_report import router as report_router
 from app.api.routes_audit import router as audit_router
 from app.api.routes_analysis import router as analysis_router
 from app.api.routes_admin import router as admin_router
+from app.api.routes_auth import router as auth_router
 from app.ml.engine import forensic_engine
 from app.utils.auth import get_current_user, CurrentUser
 
@@ -43,6 +44,7 @@ app.add_middleware(
 )
 
 # Include Modular Routers
+app.include_router(auth_router, prefix="/api")
 app.include_router(cases_router, prefix="/api")
 app.include_router(media_router, prefix="/api")
 app.include_router(report_router, prefix="/api")

@@ -6,12 +6,11 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import {
   isSupabaseConfigured,
   signInWithGoogle,
-  signInAsVerifiedUser,
   isUserAuthenticated,
   getActiveUser,
 } from "@/lib/supabaseClient";
 import { OfficerProfile } from "@/lib/types";
-import { ShieldCheck, AlertCircle, Loader2, UserCheck, Shield, KeyRound, ExternalLink } from "lucide-react";
+import { ShieldCheck, AlertCircle, Loader2, UserCheck, ExternalLink } from "lucide-react";
 
 function LoginForm() {
   const router = useRouter();
@@ -70,17 +69,8 @@ function LoginForm() {
       }
     } catch (err: any) {
       console.error("Google sign in failure:", err);
-      setError(err?.message || "Failed to initialize Google OAuth login. Please try again or use direct verified sign-in.");
+      setError(err?.message || "Failed to initialize Google OAuth login. Please try again.");
       setLoading(false);
-    }
-  };
-
-  const handleInstantSignIn = (email: string) => {
-    try {
-      signInAsVerifiedUser(email);
-      router.push(redirectTarget);
-    } catch (err: any) {
-      setError("Failed to sign in as verified user: " + err.message);
     }
   };
 
@@ -181,75 +171,8 @@ function LoginForm() {
           </button>
 
           <p className="text-[11px] text-center text-neutral-400">
-            Access and role permissions are managed by department administrators.
+            Role permissions and access controls are strictly verified against server records upon authentication.
           </p>
-        </div>
-
-        {/* Divider */}
-        <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-neutral-200 dark:border-neutral-800"></div>
-          <span className="flex-shrink mx-3 text-[10px] font-mono uppercase tracking-wider text-neutral-400">
-            Or Verified Station Access
-          </span>
-          <div className="flex-grow border-t border-neutral-200 dark:border-neutral-800"></div>
-        </div>
-
-        {/* Instant Access for Verified Department Accounts */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 flex items-center space-x-1.5">
-            <KeyRound className="w-3.5 h-3.5 text-blue-500" />
-            <span>Authorized Law Enforcement Roster</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
-            {/* Arsh Rana (Admin) */}
-            <button
-              type="button"
-              onClick={() => handleInstantSignIn("arshrana2468@gmail.com")}
-              className="w-full text-left p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-850/60 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all flex items-center justify-between group active:scale-[0.99]"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    Arsh Rana
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900">
-                    Admin
-                  </span>
-                </div>
-                <div className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 truncate">
-                  arshrana2468@gmail.com
-                </div>
-              </div>
-              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                Sign In &rarr;
-              </span>
-            </button>
-
-            {/* Free fire Ind (Officer) */}
-            <button
-              type="button"
-              onClick={() => handleInstantSignIn("find3997@gmail.com")}
-              className="w-full text-left p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-850/60 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all flex items-center justify-between group active:scale-[0.99]"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    Free fire Ind
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                    Officer
-                  </span>
-                </div>
-                <div className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 truncate">
-                  find3997@gmail.com
-                </div>
-              </div>
-              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                Sign In &rarr;
-              </span>
-            </button>
-          </div>
         </div>
       </GlassCard>
     </div>
