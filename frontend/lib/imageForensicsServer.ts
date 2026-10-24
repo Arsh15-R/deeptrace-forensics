@@ -514,8 +514,8 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       )}) exhibits joint VAE latent synthesis lacking independent Bayer CFA sensel shot noise.`,
     });
   }
-  // Case 4: Elevated Noise Kurtosis & High CFA Correlation (Iterative Diffusion Denoising Artifacts)
-  else if (!isScreenshot && !isDocument && (disparityIndex > 0.075 || (kurtosis > 25.0 && meanCfaCorr > 0.965)) && meanSat > 0.18) {
+  // Case 5: Elevated Noise Kurtosis & High CFA Correlation (Iterative Diffusion Denoising Artifacts)
+  else if (!isScreenshot && !isPhysicalDocument && (disparityIndex > 0.075 || (kurtosis > 25.0 && meanCfaCorr > 0.965)) && meanSat > 0.18) {
     verdict = "likely_ai_generated";
     confidence = Math.min(
       88.5,
