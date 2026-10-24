@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-rgb: 248, 250, 252;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 248, 250, 252;
+    --background-rgb: 11, 15, 25;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  min-height: 100vh;
+  letter-spacing: -0.011em;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.6);
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid #0A84FF;
+  outline-offset: 2px;
+}
+
+/* Progress and Loading Bar Animations */
+@keyframes progress-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    left: -40%;
+    right: 100%;
+  }
+  50% {
+    left: 20%;
+    right: 20%;
+  }
+  100% {
+    left: 100%;
+    right: -40%;
+  }
+}
+
+.animate-progress-shimmer {
+  animation: progress-shimmer 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-progress-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  animation: progress-indeterminate 1.6s cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-progress-shimmer,
+  .animate-progress-indeterminate {
+    animation: none !important;
+  }
+}
+

@@ -1,0 +1,80 @@
+# Environment variables & secrets (CRITICAL)
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env.local
+frontend/.env.*.local
+backend/.env
+backend/.env.*.local
+
+# Next.js build output & cache
+frontend/.next/
+frontend/out/
+frontend/build/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.js
+
+# Python bytecode & virtual environments
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Forensic output
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+storage_vault/
+*.db
+*.sqlite
+*.sqlite3
+evidence.db
+test_output.*
+test_output.pdf
+test_output.png
+
+# Vercel deployment cache
+.vercel/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
