@@ -153,14 +153,21 @@ class AudioDeepfakeDetector:
         bw_999 = float(f_axis[np.searchsorted(cum_pow, 0.999)])
 
         spectral_suspicion_pts = 0.0
-        # If container rate is >= 22 kHz, check for 12 kHz or 8 kHz Nyquist ceiling
-        if sr >= 22050:
-            if ratio_11k < 0.0001 or (bw_999 < 11800 and sr >= 24000):
+        # If container rate is >= 32 kHz, check for 12 kHz cutoff (native 24 kHz vocoder upsampled)
+        # If container rate is >= 22 kHz, check for 8 kHz cutoff (native 16 kHz acoustic model upsampled)
+        if sr >= 32000:
+            if ratio_11k < 0.0001 or (bw_999 < 11800 and ratio_15k < 0.00001):
                 spectral_suspicion_pts = 35.0
                 key_findings.append(
-                    f"Atypical brickwall spectral cutoff detected at 11.5-12.0 kHz (99.9% BW: {bw_999:.0f} Hz), matching the native Nyquist ceiling of 24 kHz neural vocoders (e.g. ElevenLabs, HiFi-GAN, VITS)."
+                    f"Atypical brickwall spectral cutoff detected at 11.5-12.0 kHz (99.9% BW: {bw_999:.0f} Hz inside a {sr} Hz container), matching the native Nyquist ceiling of 24 kHz neural vocoders (e.g. ElevenLabs, HiFi-GAN, VITS) upsampled to higher container rates."
                 )
             elif ratio_8k < 0.002 or bw_999 < 8200:
+                spectral_suspicion_pts = 30.0
+                key_findings.append(
+                    f"Severe high-frequency band decimation (< 8 kHz cutoff, ratio: {ratio_8k:.5f}), matching 16 kHz acoustic model upsampling."
+                )
+        elif sr >= 22050:
+            if ratio_8k < 0.002 or bw_999 < 8200:
                 spectral_suspicion_pts = 30.0
                 key_findings.append(
                     f"Severe high-frequency band decimation (< 8 kHz cutoff, ratio: {ratio_8k:.5f}), matching 16 kHz acoustic model upsampling."
@@ -210,13 +217,17 @@ class AudioDeepfakeDetector:
                     f"Unnatural vocal pitch stability (jitter: {jitter_pct:.2f}%); physical human glottal pulses naturally fluctuate between 1.0% and 4.0%."
                 )
 
-        # De-conflict vocoder peak from speaker's fundamental pitch (F0)
+        # De-conflict vocoder peak from speaker's fundamental pitch (F0) and harmonics
         pitch_conflict = False
         if mean_f0 > 0:
-            if abs(vocoder_peak_freq - mean_f0) < 16.0 or abs(vocoder_peak_freq - (mean_f0 / 2)) < 10.0:
+            if (
+                abs(vocoder_peak_freq - mean_f0) < 22.0 or 
+                abs(vocoder_peak_freq - (mean_f0 / 2)) < 16.0 or 
+                abs(vocoder_peak_freq - (mean_f0 * 2)) < 25.0
+            ):
                 pitch_conflict = True
 
-        if vocoder_peak_ratio > 2.4 and vocoder_peak_freq > 0 and not pitch_conflict:
+        if vocoder_peak_ratio > 2.8 and vocoder_peak_freq > 0 and not pitch_conflict and (jitter_pct < 6.0 or std_f0 < 30.0):
             vocoder_hop_pts = 32.0
             key_findings.append(
                 f"Persistent sub-band envelope modulation spike detected at {vocoder_peak_freq:.1f} Hz (prominence: {vocoder_peak_ratio:.2f}x baseline), matching neural vocoder frame stepping strides."
@@ -272,9 +283,12 @@ class AudioDeepfakeDetector:
                 "Continuous high-frequency acoustic air dispersion above 15 kHz consistent with physical studio microphone capture."
             )
 
-        # Mitigating natural human prosody & breathing
-        if std_f0 > 18.0 and jitter_pct > 2.0 and silence_suspicion_pts == 0 and vocoder_hop_pts == 0:
-            total_evidence_score -= 15.0
+        # Mitigating natural human prosody & breathing biomechanics
+        if std_f0 > 18.0 and jitter_pct > 1.5:
+            total_evidence_score -= 22.0
+            key_findings.append(
+                f"Natural vocal cord biomechanics verified: organic dynamic inflection (F0 std dev: {std_f0:.1f} Hz) and human glottal jitter ({jitter_pct:.2f}%)."
+            )
 
         # Adjust for noisy audio
         if snr_db < 10.0:

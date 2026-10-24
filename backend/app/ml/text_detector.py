@@ -3,7 +3,7 @@ import re
 import math
 import time
 import hashlib
-from typing import List, Dict
+from typing import List, Dict, Tuple, Any
 import numpy as np
 import pypdf
 import docx
@@ -50,16 +50,25 @@ class TextDeepfakeDetector:
             r"\btransformative potential\b"
         ]
 
-    def extract_text_from_bytes(self, data: bytes, filename: str) -> str:
-        """Extracts plain text from raw string, TXT, DOCX, or PDF bytes."""
+    def extract_text_and_meta(self, data: bytes, filename: str) -> Tuple[str, Dict[str, Any]]:
+        """Extracts plain text and forensic container metadata from TXT, DOCX, or PDF bytes."""
         ext = filename.lower().split(".")[-1] if "." in filename else ""
+        doc_meta: Dict[str, Any] = {"DocumentFormat": ext.upper() or "TXT"}
         
         if ext == "pdf":
             try:
                 reader = pypdf.PdfReader(io.BytesIO(data))
                 text = " ".join([page.extract_text() or "" for page in reader.pages])
+                meta = reader.metadata or {}
+                doc_meta["PageCount"] = len(reader.pages)
+                if meta.creator:
+                    doc_meta["Creator"] = str(meta.creator)
+                if meta.producer:
+                    doc_meta["Producer"] = str(meta.producer)
+                if meta.author:
+                    doc_meta["Author"] = str(meta.author)
                 if text.strip():
-                    return text.strip()
+                    return text.strip(), doc_meta
             except Exception:
                 pass
 
@@ -67,18 +76,28 @@ class TextDeepfakeDetector:
             try:
                 doc = docx.Document(io.BytesIO(data))
                 text = "\n".join([p.text for p in doc.paragraphs if p.text])
+                core = doc.core_properties
+                doc_meta["ParagraphCount"] = len(doc.paragraphs)
+                if core.author:
+                    doc_meta["Author"] = str(core.author)
+                if core.last_modified_by:
+                    doc_meta["LastModifiedBy"] = str(core.last_modified_by)
                 if text.strip():
-                    return text.strip()
+                    return text.strip(), doc_meta
             except Exception:
                 pass
 
         try:
-            return data.decode("utf-8")
+            return data.decode("utf-8"), doc_meta
         except UnicodeDecodeError:
             try:
-                return data.decode("latin-1")
+                return data.decode("latin-1"), doc_meta
             except Exception:
-                return str(data[:2000])
+                return str(data[:2000]), doc_meta
+
+    def extract_text_from_bytes(self, data: bytes, filename: str) -> str:
+        text, _ = self.extract_text_and_meta(data, filename)
+        return text
 
     def calculate_zipf_slope(self, unigram_counts: List[int]) -> float:
         """
@@ -124,8 +143,9 @@ class TextDeepfakeDetector:
     def analyze(self, raw_input: str | bytes, filename: str, job_id: str) -> StandardizedAnalysisResult:
         start_time = time.time()
         
+        doc_meta: Dict[str, Any] = {}
         if isinstance(raw_input, bytes):
-            text = self.extract_text_from_bytes(raw_input, filename)
+            text, doc_meta = self.extract_text_and_meta(raw_input, filename)
             file_bytes = raw_input
         else:
             text = raw_input
@@ -148,7 +168,8 @@ class TextDeepfakeDetector:
         technical_metadata = {
             "WordCount": word_count,
             "SentenceCount": sentence_count,
-            "CharacterCount": len(clean_text)
+            "CharacterCount": len(clean_text),
+            **doc_meta
         }
 
         # Guard: Sample too short (< 40 words)
@@ -331,9 +352,12 @@ class TextDeepfakeDetector:
             raw_suspicion = max(raw_suspicion, 70.0)
 
         # Non-Native English / Formal Human Writing Safeguard:
-        # If burstiness is natural (CV >= 0.40) and zero LLM markers, guarantee authentic floor
-        if burstiness_ratio >= 0.40 and llm_marker_hits == 0:
-            raw_suspicion = min(raw_suspicion, 22.0)
+        # If burstiness is natural (CV >= 0.26) and zero LLM markers, guarantee authentic floor
+        if burstiness_ratio >= 0.26 and llm_marker_hits == 0:
+            raw_suspicion = min(raw_suspicion, 18.0)
+            key_findings.append(
+                f"Stylometric metrics conform to natural human composition: healthy sentence length variance (CV: {burstiness_ratio:.2f}) and zero formulaic LLM transitional clichés."
+            )
 
         # Calibration: Neyman-Pearson limits for text
         # Cap confidence at 76% to reflect fundamental linguistic humility
