@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API /analyze/link] Ingested remote URL: ${url}`);
 
-    const backendUrl = process.env.BACKEND_URL;
+    const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV !== "production" ? "http://127.0.0.1:8000" : undefined);
     if (backendUrl) {
       try {
         console.log(`[API /analyze/link] Attempting proxy to backend: ${backendUrl}`);

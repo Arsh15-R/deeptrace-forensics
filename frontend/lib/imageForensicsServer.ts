@@ -480,72 +480,42 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       detail: "Complete absence of physical camera CMOS sensor noise dither and ambient light falloff, characteristic of generative neural rendering or digital vector rasterization.",
     });
   }
-  // Case 4: High Texture Disparity & Synthetic CFA Cross-Correlation (AI Infographics / Anime / Illustrations / Photoreal AI)
-  else if (!isScreenshot && !isPhysicalDocument && disparityIndex > 0.08 && meanCfaCorr > 0.96 && meanSat > 0.18) {
+  // Case 4: Synthetic Latent VAE Cross-Channel Correlation & Diffusion Residuals (Midjourney, DALL-E, SD, Flux)
+  else if (
+    !isScreenshot &&
+    !isPhysicalDocument &&
+    (meanCfaCorr > 0.965 || (kurtosis > 6.0 && meanCfaCorr > 0.92) || (disparityIndex > 0.075 && meanCfaCorr > 0.90))
+  ) {
     verdict = "likely_ai_generated";
     confidence = Math.min(
-      95.0,
-      74.0 + (disparityIndex - 0.08) * 400 + (meanCfaCorr - 0.96) * 350
+      96.0,
+      76.0 + Math.max(0, (meanCfaCorr - 0.95) * 450) + Math.max(0, (kurtosis - 6.0) * 1.5)
     );
-    pixelScore = Math.min(96.0, 75.0 + (disparityIndex - 0.08) * 450);
-    lightingScore = Math.min(94.0, 72.0 + (meanCfaCorr - 0.96) * 400);
-    metadataScore = 80.0;
+    pixelScore = Math.min(96.0, 75.0 + Math.max(0, (kurtosis - 6.0) * 2.0));
+    lightingScore = Math.min(94.0, 72.0 + Math.max(0, (meanCfaCorr - 0.92) * 350));
+    metadataScore = hasCameraMake ? 40.0 : 82.0;
 
-    breakdown.push({
-      name: "Synthetic Surface Texture Disparity",
-      category: "pixel_patterns",
-      score: pixelScore,
-      weight: 0.45,
-      flagged: true,
-      status: "Synthetic Surface Dichotomy",
-      detail: `Surface texture exhibits synthetic dichotomy (sterile porcelain plains alongside hyper-sharp vector contours, index: ${disparityIndex.toFixed(
-        3
-      )}).`,
-    });
     breakdown.push({
       name: "Joint Latent VAE Chrominance Correlation",
-      category: "face_lighting",
-      score: lightingScore,
-      weight: 0.35,
-      flagged: true,
-      status: "Joint Latent Decoding",
-      detail: `High-frequency RGB cross-channel correlation (${meanCfaCorr.toFixed(
-        3
-      )}) exhibits joint VAE latent synthesis lacking independent Bayer CFA sensel shot noise.`,
-    });
-  }
-  // Case 5: Elevated Noise Kurtosis & High CFA Correlation (Iterative Diffusion Denoising Artifacts)
-  else if (!isScreenshot && !isPhysicalDocument && (disparityIndex > 0.075 || (kurtosis > 25.0 && meanCfaCorr > 0.965)) && meanSat > 0.18) {
-    verdict = "likely_ai_generated";
-    confidence = Math.min(
-      88.5,
-      70.0 + (kurtosis - 25.0) * 0.8 + (meanCfaCorr - 0.965) * 300
-    );
-    pixelScore = Math.min(90.0, 68.0 + (kurtosis - 25.0) * 1.2);
-    lightingScore = Math.min(88.0, 66.0 + (meanCfaCorr - 0.965) * 350);
-    metadataScore = 75.0;
-
-    breakdown.push({
-      name: "Non-Gaussian Sensor Noise Kurtosis",
       category: "pixel_patterns",
       score: pixelScore,
       weight: 0.45,
       flagged: true,
-      status: "Latent Diffusion Residual",
-      detail: `Physical sensor noise residual kurtosis (${kurtosis.toFixed(
-        1
-      )}) severely deviates from optical camera Gaussian limits, confirming iterative latent diffusion denoising.`,
+      status: "Synthetic Joint Latent Decoding",
+      detail: `High-frequency RGB cross-channel correlation (${meanCfaCorr.toFixed(
+        3
+      )}) exhibits joint VAE latent synthesis, lacking independent physical Bayer CFA sensel shot noise.`,
     });
     breakdown.push({
-      name: "Cross-Spectral Coherence",
+      name: "Non-Gaussian Sensor Noise Kurtosis",
       category: "face_lighting",
       score: lightingScore,
       weight: 0.35,
       flagged: true,
-      status: "Synthetic Residual Spectrum",
-      detail: `High-frequency residual correlation (${meanCfaCorr.toFixed(
-        3
-      )}) conforms to synthetic neural model decoding rather than optical physical capture.`,
+      status: "Diffusion Denoising Residual",
+      detail: `Physical sensor noise residual kurtosis (${kurtosis.toFixed(
+        1
+      )}) deviates from optical camera Gaussian limits, confirming iterative latent diffusion denoising.`,
     });
   }
   // Case 4: Digital UI Screen Capture / Screenshot

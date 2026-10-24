@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     console.log(`[API /analyze/image] Ingested ${file.name} (${buffer.length} bytes)`);
 
-    // Try proxying to FastAPI backend only if explicitly configured
-    const backendUrl = process.env.BACKEND_URL;
+    // Try proxying to FastAPI backend (local dev or configured URL)
+    const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV !== "production" ? "http://127.0.0.1:8000" : undefined);
     if (backendUrl) {
       try {
         console.log(`[API /analyze/image] Attempting proxy to backend: ${backendUrl}`);
