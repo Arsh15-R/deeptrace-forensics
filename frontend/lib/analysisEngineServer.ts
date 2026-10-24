@@ -3,6 +3,7 @@ import zlib from "node:zlib";
 import path from "node:path";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { generateForensicHeatmapPng } from "@/lib/heatmapServer";
+import { analyzeImageForensics } from "@/lib/imageForensicsServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
 export interface AnalysisInput {
@@ -144,63 +145,13 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // MODALITY 1: IMAGE FORENSICS
   // =========================================================================
   if (input.mediaType === "image" && input.buffer) {
-    const rawStr = input.buffer.toString("latin1");
-    const hasAiMarkers = /midjourney|dall-e|stablediffusion|c2pa|flux\.1|novelai|synthid|ideogram|leonardo|firefly|bing\/create|wepik|craiyon/i.test(rawStr);
-    const hasExif = rawStr.includes("Exif") || rawStr.includes("JFIF");
-    const hasCameraMake = /Canon|Nikon|Sony|Apple|Samsung|Google|Xiaomi|Huawei|OnePlus|Motorola|Fujifilm|Olympus|Panasonic/i.test(rawStr);
-
-    if (hasAiMarkers) {
-      verdict = "likely_ai_generated";
-      confidence = 92.4;
-      pixelScore = 94.0;
-      lightingScore = 88.0;
-      metadataScore = 95.0;
-      breakdown.push({
-        name: "Generative Diffusion Fingerprint",
-        category: "pixel_patterns",
-        score: 95.0,
-        weight: 0.45,
-        flagged: true,
-        status: "High Synthetic Probability",
-        detail: "Embedded generative diffusion model metadata tags and structural latent parameters identified.",
-      });
-      breakdown.push({
-        name: "Joint VAE Latent Distribution",
-        category: "face_lighting",
-        score: 91.0,
-        weight: 0.35,
-        flagged: true,
-        status: "Anomalous Cross-Channel Synthesis",
-        detail: "Synthetic RGB joint decoding observed devoid of physical camera Bayer CFA demosaicing.",
-      });
-    } else {
-      // Authentic camera optical characteristics verified
-      verdict = "likely_authentic";
-      confidence = 14.2; // Synthetic risk index (<35% is authentic in forensic gauge)
-      pixelScore = 14.5;
-      lightingScore = 18.0;
-      metadataScore = hasCameraMake ? 8.0 : (hasExif ? 12.0 : 18.0);
-      breakdown.push({
-        name: "Optical Camera Sensor Noise (PRNU)",
-        category: "pixel_patterns",
-        score: 14.5,
-        weight: 0.4,
-        flagged: false,
-        status: "Natural Optical Signature",
-        detail: "Physical CMOS/CCD sensor photo-response non-uniformity and natural Gaussian photon noise verified.",
-      });
-      breakdown.push({
-        name: "Physical Optical Chrominance & CFA",
-        category: "metadata_exif",
-        score: metadataScore,
-        weight: 0.35,
-        flagged: false,
-        status: hasCameraMake ? "Camera Provenance Verified" : "Natural Camera Residuals",
-        detail: hasCameraMake
-          ? "Authentic optical device hardware tags and physical sensor exposure parameters verified."
-          : "Natural Poisson noise dispersion across color channels conforms to physical camera capture.",
-      });
-    }
+    const imgAnalysis = analyzeImageForensics(input.buffer, input.filename);
+    verdict = imgAnalysis.verdict;
+    confidence = imgAnalysis.confidence;
+    pixelScore = imgAnalysis.pixelScore;
+    lightingScore = imgAnalysis.lightingScore;
+    metadataScore = imgAnalysis.metadataScore;
+    breakdown.push(...imgAnalysis.breakdown);
   }
 
   // =========================================================================
