@@ -10,7 +10,7 @@ import {
   getActiveUser,
 } from "@/lib/supabaseClient";
 import { OfficerProfile } from "@/lib/types";
-import { ShieldCheck, AlertCircle, Loader2, UserCheck, ExternalLink } from "lucide-react";
+import { ShieldCheck, AlertCircle, Loader2, UserCheck } from "lucide-react";
 
 function LoginForm() {
   const router = useRouter();
@@ -21,7 +21,6 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [alreadyAuthed, setAlreadyAuthed] = useState(false);
   const [currentUser, setCurrentUser] = useState<OfficerProfile | null>(null);
-  const [directUrl, setDirectUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const errorParam = searchParams.get("error");
@@ -49,7 +48,6 @@ function LoginForm() {
   const handleGoogleSignIn = async () => {
     if (loading) return;
     setError(null);
-    setDirectUrl(null);
 
     if (!isSupabaseConfigured) {
       setError(
@@ -61,11 +59,8 @@ function LoginForm() {
     setLoading(true);
     try {
       const res = await signInWithGoogle(redirectTarget);
-      if (res?.url) {
-        setDirectUrl(res.url);
-        if (typeof window !== "undefined") {
-          window.location.href = res.url;
-        }
+      if (res?.url && typeof window !== "undefined") {
+        window.location.assign(res.url);
       }
     } catch (err: any) {
       console.error("Google sign in failure:", err);
@@ -114,20 +109,6 @@ function LoginForm() {
               <p className="font-semibold">Authentication Notice</p>
               <p className="mt-0.5 text-[11px] leading-relaxed">{error}</p>
             </div>
-          </div>
-        )}
-
-        {/* Direct Link Fallback (if popups/redirects are blocked by client) */}
-        {directUrl && (
-          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs flex items-center justify-between">
-            <span className="text-[11px]">Browser did not redirect automatically?</span>
-            <a
-              href={directUrl}
-              className="inline-flex items-center space-x-1 font-bold underline hover:no-underline ml-2 flex-shrink-0 text-blue-600 dark:text-blue-400"
-            >
-              <span>Open Google Login</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
           </div>
         )}
 
