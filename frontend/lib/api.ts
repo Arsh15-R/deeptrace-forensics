@@ -116,8 +116,12 @@ export async function analyzeImage(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
+  const endpoint = apiUrl("/api/cases/analyze/image");
+  if (typeof window !== "undefined") {
+    console.log(`[DeepTrace Client] POST ${endpoint} (File: ${file.name}, Size: ${file.size}B)`);
+  }
   try {
-    const res = await fetch(apiUrl("/api/cases/analyze/image"), {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: formData,
@@ -140,8 +144,12 @@ export async function analyzeVideo(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
+  const endpoint = apiUrl("/api/cases/analyze/video");
+  if (typeof window !== "undefined") {
+    console.log(`[DeepTrace Client] POST ${endpoint} (File: ${file.name}, Size: ${file.size}B)`);
+  }
   try {
-    const res = await fetch(apiUrl("/api/cases/analyze/video"), {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: formData,
@@ -164,8 +172,12 @@ export async function analyzeAudio(
   if (caseRef) formData.append("case_ref", caseRef);
 
   const headers = await getHeaders();
+  const endpoint = apiUrl("/api/cases/analyze/audio");
+  if (typeof window !== "undefined") {
+    console.log(`[DeepTrace Client] POST ${endpoint} (File: ${file.name}, Size: ${file.size}B)`);
+  }
   try {
-    const res = await fetch(apiUrl("/api/cases/analyze/audio"), {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: formData,
@@ -184,8 +196,12 @@ export async function analyzeLink(
   signal?: AbortSignal
 ): Promise<CaseRecord> {
   const headers = await getHeaders({ "Content-Type": "application/json" });
+  const endpoint = apiUrl("/api/cases/analyze/link");
+  if (typeof window !== "undefined") {
+    console.log(`[DeepTrace Client] POST ${endpoint} (URL: ${url})`);
+  }
   try {
-    const res = await fetch(apiUrl("/api/cases/analyze/link"), {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({ url, case_reference: caseRef }),
@@ -204,8 +220,12 @@ export async function analyzeText(
   signal?: AbortSignal
 ): Promise<CaseRecord> {
   const headers = await getHeaders({ "Content-Type": "application/json" });
+  const endpoint = apiUrl("/api/cases/analyze/text");
+  if (typeof window !== "undefined") {
+    console.log(`[DeepTrace Client] POST ${endpoint} (Length: ${text.length} chars)`);
+  }
   try {
-    const res = await fetch(apiUrl("/api/cases/analyze/text"), {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({ text, case_reference: caseRef }),

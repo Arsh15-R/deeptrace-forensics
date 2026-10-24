@@ -234,10 +234,33 @@ export async function signOutUser() {
 }
 
 export async function getAuthToken(): Promise<string | null> {
+  // 1. Fast synchronous retrieval from localStorage (bypasses navigator.locks)
+  if (typeof window !== "undefined") {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes("auth-token") || key.startsWith("sb-"))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.access_token) return parsed.access_token;
+            if (parsed?.currentSession?.access_token) return parsed.currentSession.access_token;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Fallback with strict 800ms race timeout
   if (!supabase) return null;
   try {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token || null;
+    const outcome = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: null } }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null } }), 800)
+      ),
+    ]);
+    return outcome.data?.session?.access_token || null;
   } catch {
     return null;
   }

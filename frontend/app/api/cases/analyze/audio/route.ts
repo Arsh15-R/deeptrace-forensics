@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     console.log(`[API /analyze/audio] Ingested ${file.name} (${buffer.length} bytes)`);
 
-    const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV !== "production" ? "http://127.0.0.1:8000" : undefined);
+    const backendUrl = process.env.USE_PYTHON_BACKEND === "true" ? (process.env.BACKEND_URL || "http://127.0.0.1:8000") : undefined;
     if (backendUrl) {
       try {
         console.log(`[API /analyze/audio] Attempting proxy to backend: ${backendUrl}`);

@@ -199,15 +199,19 @@ export const ImageUploader: React.FC = () => {
           if (!userCancelledRef.current) {
             setProgress(94);
             setProgressLabel("Calibrating Neyman-Pearson decision boundary & signing audit record...");
-            setProgressDetail("Stage 4 of 4: Awaiting final verification...");
-            if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Stage 2.3: Progress 94% (holding until server response)");
+            setProgressDetail("Stage 4 of 4: Awaiting final verification from analysis engine...");
           }
         }, 1800)
       );
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[DeepTrace Client] Stage 2: Dispatching POST /api/cases/analyze/image...");
-      }
+      timersRef.current.push(
+        setTimeout(() => {
+          if (!userCancelledRef.current) {
+            setProgressLabel("Synthesizing ELA anomaly heatmap & signing cryptographic chain of custody...");
+            setProgressDetail("Stage 4 of 4: Deep sensor noise residual calculation in progress...");
+          }
+        }, 8000)
+      );
 
       const result = await analyzeImage(file, caseRef.trim() || undefined, controller.signal);
       cleanupTimers();
@@ -215,10 +219,6 @@ export const ImageUploader: React.FC = () => {
       if (userCancelledRef.current) {
         setLoading(false);
         return;
-      }
-
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[DeepTrace Client] Stage 3: Server returned Case: ${result.case_number}, Verdict: ${result.verdict}, Confidence: ${result.calibrated_confidence}%`);
       }
 
       // Cache full verified case record in sessionStorage for immediate instant dossier rendering
@@ -252,13 +252,13 @@ export const ImageUploader: React.FC = () => {
       setProgressLabel("Examination certified. Opening forensic dossier...");
       setProgressDetail("Stage 4 of 4: Neyman-Pearson Calibration Complete");
 
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[DeepTrace Client] Stage 4: Progress 100%. Transitioning to /results/${result.id}`);
-      }
-
       setTimeout(() => {
-        router.push(`/results/${result.id}`);
-      }, 250);
+        try {
+          router.push(`/results/${result.id}`);
+        } catch {
+          window.location.href = `/results/${result.id}`;
+        }
+      }, 200);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);

@@ -231,8 +231,12 @@ export const VideoUploader: React.FC = () => {
       }
 
       setTimeout(() => {
-        router.push(`/results/${result.id}`);
-      }, 250);
+        try {
+          router.push(`/results/${result.id}`);
+        } catch {
+          window.location.href = `/results/${result.id}`;
+        }
+      }, 200);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);

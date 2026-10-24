@@ -75,10 +75,29 @@ const SUPABASE_STORAGE_VAULT = "https://kqllmwzftudlxswtnqtg.supabase.co/storage
 /**
  * Resolves an API path against NEXT_PUBLIC_API_URL if configured,
  * otherwise falling back to same-origin relative URLs.
+ * On Vercel, if NEXT_PUBLIC_API_URL was empty at build time, falls back to the active Cloudflare Tunnel.
  */
 export function apiUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (!base) return path;
+  // If running locally in browser (localhost / 127.0.0.1), use direct local relative path
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return path.startsWith("/") ? path : `/${path}`;
+    }
+  }
+
+  // Check environment variable first, then optional localStorage override
+  let base = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!base && typeof window !== "undefined") {
+    base = localStorage.getItem("deeptrace_api_url")?.trim() || "";
+  }
+
+  // Fallback for Vercel production to route heavy forensic analysis to laptop server
+  if (!base && typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
+    base = "https://cordless-explicitly-children-donated.trycloudflare.com";
+  }
+
+  if (!base) return path.startsWith("/") ? path : `/${path}`;
   const cleanBase = base.replace(/\/+$/, "");
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${cleanBase}${cleanPath}`;

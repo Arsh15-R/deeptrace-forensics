@@ -232,8 +232,12 @@ export const AudioUploader: React.FC = () => {
       }
 
       setTimeout(() => {
-        router.push(`/results/${record.id}`);
-      }, 250);
+        try {
+          router.push(`/results/${record.id}`);
+        } catch {
+          window.location.href = `/results/${record.id}`;
+        }
+      }, 200);
     } catch (err: any) {
       cleanupTimers();
       setLoading(false);
