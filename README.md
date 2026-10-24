@@ -1,6 +1,9 @@
 # DeepTrace Forensics (v2.4)
 ### Police Media Authenticity Verification & Evidentiary Screening System
 
+> **Live Production Deployment:** [https://frontend-nine-beta-kezj4jzf35.vercel.app](https://frontend-nine-beta-kezj4jzf35.vercel.app)  
+> **GitHub Repository:** [https://github.com/Arsh15-R/deeptrace-forensics](https://github.com/Arsh15-R/deeptrace-forensics)
+
 DeepTrace is a full-stack digital forensic examination platform engineered specifically for law enforcement, internal affairs bureaus, and criminal justice investigators. It evaluates questioned images, surveillance videos, remote media links, and linguistic statements to estimate the probability of synthetic generation (deepfakes, generative AI diffusion models, and LLM text generation) while maintaining strict chain-of-custody integrity, calibrated uncertainty intervals, and audit logging.
 
 ---
