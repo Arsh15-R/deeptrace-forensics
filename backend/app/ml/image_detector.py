@@ -134,13 +134,13 @@ class ImageDeepfakeDetector:
             disparity_index = smooth_ratio * sharp_ratio
             technical_metadata["TextureDisparityIndex"] = round(disparity_index, 4)
 
-            if disparity_index > 0.050:
-                texture_score = min(96.0, 65.0 + (disparity_index - 0.050) * 450.0)
+            if disparity_index > 0.080:
+                texture_score = min(96.0, 65.0 + (disparity_index - 0.080) * 450.0)
                 key_findings.append(
                     f"Surface texture exhibits synthetic dichotomy (sterile porcelain plains alongside hyper-sharp vector contours, index: {disparity_index:.3f})."
                 )
-            elif disparity_index > 0.038:
-                texture_score = 35.0 + (disparity_index - 0.038) * 1200.0
+            elif disparity_index > 0.065:
+                texture_score = 35.0 + (disparity_index - 0.065) * 800.0
             else:
                 texture_score = 16.0
 
@@ -231,18 +231,21 @@ class ImageDeepfakeDetector:
                 mean_cfa_corr = 0.50
             technical_metadata["ColorChannelHighPassCorrelation"] = round(mean_cfa_corr, 4)
 
-            if mean_cfa_corr > 0.96 and noise_kurt > 38.0:
-                cfa_score = min(96.0, 72.0 + (mean_cfa_corr - 0.96) * 650.0)
+            # Check document/monochrome low-saturation profile
+            hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+            mean_saturation = float(np.mean(hsv[:, :, 1]))
+            is_monochrome = mean_saturation < 35.0
+
+            if mean_cfa_corr > 0.972 and not is_monochrome:
+                cfa_score = min(96.0, 75.0 + (mean_cfa_corr - 0.972) * 850.0)
                 key_findings.append(
                     f"High-frequency RGB cross-channel correlation ({mean_cfa_corr:.3f}) exhibits joint VAE latent synthesis, lacking physical Bayer CFA demosaicing independent noise."
                 )
-            elif noise_kurt <= 25.0 and disparity_index < 0.045:
+            else:
                 cfa_score = 14.0
                 key_findings.append(
-                    f"High-frequency sensor residuals and spectral falloff conform to physical camera optical capture."
+                    "High-frequency sensor residuals and spectral falloff conform to physical camera optical capture."
                 )
-            else:
-                cfa_score = 18.0
 
             # =====================================================================
             # 5. 2D DISCRETE COSINE TRANSFORM (DCT) 8x8 MACROBLOCK RESIDUALS
@@ -420,27 +423,30 @@ class ImageDeepfakeDetector:
             else:
                 conf = 84.0
 
-            if disparity_index > 0.050 and not has_camera_hardware_tag:
+            if disparity_index > 0.080 and (noise_kurt > 26.0 or mean_cfa_corr > 0.970) and not has_camera_hardware_tag:
                 # Disparity boost for synthetic/generative graphics and rescaled diffusion images
                 raw_suspicion = max(raw_suspicion, texture_score * 0.92)
                 conf = max(conf, 92.0)
 
             # Authentic Optical Camera Safeguard:
             # When an image conforms to physical camera optics:
-            # 1. Normal camera noise kurtosis (noise_kurt <= 25.0 under robust trimming)
+            # 1. Normal camera noise kurtosis (noise_kurt <= 26.0 under robust trimming)
             # 2. Absence of periodic DCT upsampling artifacts (hf_ratio < 0.055)
-            # 3. Absence of synthetic texture disparity (disparity_index < 0.045)
-            if noise_kurt <= 25.0 and hf_ratio < 0.055 and disparity_index < 0.045:
+            # 3. Natural Kolmogorov optical power spectrum (1.3 <= alpha_slope <= 3.3)
+            # 4. Realistic Bayer CFA cross-channel noise (mean_cfa_corr < 0.972) or monochrome document sensor physics
+            cfa_natural = (mean_cfa_corr < 0.972) or (is_monochrome and noise_kurt <= 25.0)
+
+            if noise_kurt <= 26.0 and hf_ratio < 0.055 and cfa_natural and 1.3 <= alpha_slope <= 3.3:
                 if has_camera_hardware_tag:
                     raw_suspicion = min(raw_suspicion, 14.0)
-                    conf = 92.0
+                    conf = 94.0
                 else:
                     raw_suspicion = min(raw_suspicion, 16.0)
-                    conf = 90.0
+                    conf = 92.0
 
                 if not any("confirm authentic optical camera" in f for f in key_findings):
                     key_findings.append(
-                        "Sensor noise physics, Kolmogorov optical spectral falloff, and frequency distribution confirm authentic optical camera capture."
+                        f"Sensor noise physics (kurtosis={noise_kurt:.1f}), Kolmogorov optical spectral falloff (alpha={alpha_slope:.2f}), and natural photon noise variance confirm authentic optical camera capture."
                     )
 
         assessment, label, calibrated_suspicion, calibrated_conf = calibrate_assessment(
