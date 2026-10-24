@@ -25,6 +25,16 @@ export default function CaseResultsPage() {
   const [caseData, setCaseData] = useState<CaseRecord | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [cachedPreview, setCachedPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (id && typeof window !== "undefined") {
+      try {
+        const item = sessionStorage.getItem(`evidence_preview_${id}`);
+        if (item) setCachedPreview(item);
+      } catch {}
+    }
+  }, [id]);
 
   const loadCaseRecord = React.useCallback(() => {
     if (!id) return;
@@ -148,9 +158,11 @@ export default function CaseResultsPage() {
           <GlassCard variant="main" className="space-y-5">
             {caseData.media_type === "image" && (
               <ImageHeatmapViewer
+                caseId={caseData.id}
                 originalUrl={caseData.media_url}
                 heatmapUrl={caseData.heatmap_url}
                 fileName={caseData.file_name}
+                cachedPreviewUrl={cachedPreview}
               />
             )}
 

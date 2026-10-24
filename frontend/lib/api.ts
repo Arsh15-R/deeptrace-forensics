@@ -257,43 +257,55 @@ function mapSupabaseCaseRow(row: any): CaseRecord {
     } catch {}
   }
 
-  return {
-    id: row.id,
-    case_number: row.case_number || `CASE-${row.id.slice(0, 8)}`,
-    officer_id: row.officer_id || "unassigned",
-    officer_name: row.officer_name || "Investigating Officer",
-    officer_badge: row.officer_badge || "UNASSIGNED",
-    department: row.department || "Cyber Forensics & Evidence Unit",
-    media_type: row.media_type || "image",
-    file_name: row.file_name,
-    source_url: row.source_url,
-    storage_path: row.storage_path,
-    file_size_bytes: row.file_size_bytes,
-    sha256_hash: row.sha256_hash || "",
-    mime_type: row.mime_type,
-    verdict: row.verdict || "inconclusive",
-    calibrated_confidence: Number(row.calibrated_confidence || 50),
-    confidence_interval_low: Number(row.confidence_interval_low || 45),
-    confidence_interval_high: Number(row.confidence_interval_high || 55),
-    per_detector_scores: perDetector || {
-      pixel_patterns: 50,
-      face_lighting: 50,
-      metadata_exif: 50,
-      breakdown: [],
-    },
-    heatmap_url: row.heatmap_url || (row.heatmap_storage_path ? `/api/media/heatmap/${row.id}` : null),
-    heatmap_path: row.heatmap_storage_path || row.heatmap_path,
-    media_url: row.media_url || (row.storage_path ? `/api/media/evidence/${row.id}` : null),
-    timeline_scores: Array.isArray(timeline) ? timeline : [],
-    text_snippet: row.text_snippet,
-    model_name: row.model_name || "TruthLens Multi-Modal Ensemble",
-    model_version: row.model_version || "v2.4",
-    known_error_rate_fpr: Number(row.known_error_rate_fpr || 4.2),
-    known_error_rate_fnr: Number(row.known_error_rate_fnr || 6.8),
-    limitations_notes: row.notes || row.limitations_notes || "Neyman-Pearson calibrated forensic evaluation.",
-    created_at: row.created_at || new Date().toISOString(),
-    updated_at: row.updated_at || row.created_at || new Date().toISOString(),
-  };
+    const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
+    const cleanStorage = row.storage_path ? (row.storage_path.startsWith("/") ? row.storage_path.slice(1) : row.storage_path) : null;
+    const cleanHeatmap = row.heatmap_storage_path ? (row.heatmap_storage_path.startsWith("/") ? row.heatmap_storage_path.slice(1) : row.heatmap_storage_path) : null;
+
+    const resolvedMediaUrl = (row.media_url && (row.media_url.startsWith("http://") || row.media_url.startsWith("https://")))
+      ? row.media_url
+      : (cleanStorage ? `${supabaseStorageBase}/${cleanStorage}` : `/api/media/evidence/${row.id}`);
+
+    const resolvedHeatmapUrl = (row.heatmap_url && (row.heatmap_url.startsWith("http://") || row.heatmap_url.startsWith("https://")))
+      ? row.heatmap_url
+      : (cleanHeatmap ? `${supabaseStorageBase}/${cleanHeatmap}` : (row.media_type === "image" ? `/api/media/heatmap/${row.id}` : null));
+
+    return {
+      id: row.id,
+      case_number: row.case_number || `CASE-${row.id.slice(0, 8)}`,
+      officer_id: row.officer_id || "unassigned",
+      officer_name: row.officer_name || "Investigating Officer",
+      officer_badge: row.officer_badge || "UNASSIGNED",
+      department: row.department || "Cyber Forensics & Evidence Unit",
+      media_type: row.media_type || "image",
+      file_name: row.file_name,
+      source_url: row.source_url,
+      storage_path: row.storage_path,
+      file_size_bytes: row.file_size_bytes,
+      sha256_hash: row.sha256_hash || "",
+      mime_type: row.mime_type,
+      verdict: row.verdict || "inconclusive",
+      calibrated_confidence: Number(row.calibrated_confidence || 50),
+      confidence_interval_low: Number(row.confidence_interval_low || 45),
+      confidence_interval_high: Number(row.confidence_interval_high || 55),
+      per_detector_scores: perDetector || {
+        pixel_patterns: 50,
+        face_lighting: 50,
+        metadata_exif: 50,
+        breakdown: [],
+      },
+      heatmap_url: resolvedHeatmapUrl,
+      heatmap_path: row.heatmap_storage_path || row.heatmap_path,
+      media_url: resolvedMediaUrl,
+      timeline_scores: Array.isArray(timeline) ? timeline : [],
+      text_snippet: row.text_snippet,
+      model_name: row.model_name || "TruthLens Multi-Modal Ensemble",
+      model_version: row.model_version || "v2.4",
+      known_error_rate_fpr: Number(row.known_error_rate_fpr || 4.2),
+      known_error_rate_fnr: Number(row.known_error_rate_fnr || 6.8),
+      limitations_notes: row.notes || row.limitations_notes || "Neyman-Pearson calibrated forensic evaluation.",
+      created_at: row.created_at || new Date().toISOString(),
+      updated_at: row.updated_at || row.created_at || new Date().toISOString(),
+    };
 }
 
 export async function getCase(caseId: string, signal?: AbortSignal): Promise<CaseRecord> {

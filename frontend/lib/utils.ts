@@ -70,30 +70,25 @@ export async function computeClientSHA256(file: File): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-const isBrowser = typeof window !== "undefined";
-const isLocalhost =
-  isBrowser &&
-  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL
-  ? process.env.NEXT_PUBLIC_API_URL.includes("localhost") && !isLocalhost
-    ? ""
-    : process.env.NEXT_PUBLIC_API_URL
-  : isLocalhost
-  ? "http://127.0.0.1:8000"
-  : "";
+const SUPABASE_STORAGE_VAULT = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
 
 export function resolveMediaUrl(url?: string | null): string {
   if (!url) return "";
+  const trimmed = url.trim();
   if (
-    url.startsWith("http://") ||
-    url.startsWith("https://") ||
-    url.startsWith("data:") ||
-    url.startsWith("blob:")
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
   ) {
-    return url;
+    return trimmed;
   }
-  const prefix = API_BASE ? (API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE) : "";
-  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
-  return `${prefix}${normalizedUrl}`;
+  if (trimmed.startsWith("evidence/") || trimmed.startsWith("heatmaps/")) {
+    return `${SUPABASE_STORAGE_VAULT}/${trimmed}`;
+  }
+  if (trimmed.startsWith("/evidence/") || trimmed.startsWith("/heatmaps/")) {
+    return `${SUPABASE_STORAGE_VAULT}${trimmed}`;
+  }
+  // Return same-origin Next.js API path for /api/media/...
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }

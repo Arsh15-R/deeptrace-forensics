@@ -49,6 +49,18 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
+      const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
+      const cleanStorage = row.storage_path ? (row.storage_path.startsWith("/") ? row.storage_path.slice(1) : row.storage_path) : null;
+      const cleanHeatmap = row.heatmap_storage_path ? (row.heatmap_storage_path.startsWith("/") ? row.heatmap_storage_path.slice(1) : row.heatmap_storage_path) : null;
+
+      const resolvedMediaUrl = (row.media_url && (row.media_url.startsWith("http://") || row.media_url.startsWith("https://")))
+        ? row.media_url
+        : (cleanStorage ? `${supabaseStorageBase}/${cleanStorage}` : `/api/media/evidence/${row.id}`);
+
+      const resolvedHeatmapUrl = (row.heatmap_url && (row.heatmap_url.startsWith("http://") || row.heatmap_url.startsWith("https://")))
+        ? row.heatmap_url
+        : (cleanHeatmap ? `${supabaseStorageBase}/${cleanHeatmap}` : (row.media_type === "image" ? `/api/media/heatmap/${row.id}` : null));
+
       return {
         id: row.id,
         case_number: row.case_number || `CASE-${row.id.slice(0, 8)}`,
@@ -73,9 +85,9 @@ export async function GET(request: NextRequest) {
           metadata_exif: 50,
           breakdown: [],
         },
-        heatmap_url: row.heatmap_url || (row.heatmap_storage_path ? `/api/media/heatmap/${row.id}` : null),
+        heatmap_url: resolvedHeatmapUrl,
         heatmap_path: row.heatmap_storage_path || row.heatmap_path,
-        media_url: row.media_url || (row.storage_path ? `/api/media/evidence/${row.id}` : null),
+        media_url: resolvedMediaUrl,
         timeline_scores: Array.isArray(timeline) ? timeline : [],
         text_snippet: row.text_snippet,
         model_name: row.model_name || "TruthLens Multi-Modal Ensemble",

@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
+import path from "node:path";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { generateForensicHeatmapPng } from "@/lib/heatmapServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
 export interface AnalysisInput {
@@ -454,6 +456,52 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     }
   }
 
+  const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : "");
+  const storageRelPath = `evidence/${caseId}${ext}`;
+  const heatmapRelPath = input.mediaType === "image" ? `heatmaps/${caseId}.png` : null;
+  const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
+
+  // 2. Persist Evidence File & Anomaly Heatmap to Supabase Storage Vault
+  if (input.buffer) {
+    // Map mime types to ensure acceptance by bucket policy
+    let uploadMime = mimeType;
+    if (uploadMime === "image/jpg") uploadMime = "image/jpeg";
+    if (!["image/jpeg", "image/png", "image/webp", "audio/wav", "audio/mpeg", "audio/ogg", "application/pdf"].includes(uploadMime)) {
+      if (input.mediaType === "image") uploadMime = "image/jpeg";
+      else if (input.mediaType === "audio") uploadMime = "audio/wav";
+      else uploadMime = "application/pdf";
+    }
+
+    try {
+      await supabaseServer.storage
+        .from("evidence-vault")
+        .upload(storageRelPath, input.buffer, {
+          contentType: uploadMime,
+          upsert: true,
+        });
+    } catch (storageErr) {
+      console.warn("Evidence upload to Supabase storage vault warning:", storageErr);
+    }
+
+    // For image media, generate authentic forensic ELA thermal anomaly heatmap and upload
+    if (input.mediaType === "image" && heatmapRelPath) {
+      try {
+        const heatmapBuffer = generateForensicHeatmapPng(input.buffer, verdict, confidence);
+        await supabaseServer.storage
+          .from("evidence-vault")
+          .upload(heatmapRelPath, heatmapBuffer, {
+            contentType: "image/png",
+            upsert: true,
+          });
+      } catch (heatmapErr) {
+        console.warn("Heatmap upload to Supabase storage vault warning:", heatmapErr);
+      }
+    }
+  }
+
+  const publicEvidenceUrl = `${supabaseStorageBase}/${storageRelPath}`;
+  const publicHeatmapUrl = heatmapRelPath ? `${supabaseStorageBase}/${heatmapRelPath}` : null;
+
   const caseRecord: CaseRecord = {
     id: caseId,
     case_number: caseNumber,
@@ -464,7 +512,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     media_type: input.mediaType,
     file_name: input.filename,
     source_url: input.sourceUrl || null,
-    storage_path: `evidence/${caseId}_${input.filename}`,
+    storage_path: storageRelPath,
     file_size_bytes: fileSizeBytes,
     sha256_hash: sha256,
     mime_type: mimeType,
@@ -480,9 +528,9 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
       audio_spectral: audioScore,
       breakdown,
     },
-    heatmap_url: input.mediaType === "image" ? `/api/media/heatmap/${caseId}` : null,
-    heatmap_path: input.mediaType === "image" ? `heatmaps/${caseId}.png` : null,
-    media_url: `/api/media/evidence/${caseId}`,
+    heatmap_url: publicHeatmapUrl,
+    heatmap_path: heatmapRelPath,
+    media_url: publicEvidenceUrl,
     timeline_scores: [],
     text_snippet: textSnippet,
     model_name: "TruthLens Multi-Modal Ensemble",

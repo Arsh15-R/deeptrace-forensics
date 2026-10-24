@@ -148,6 +148,21 @@ export const ImageUploader: React.FC = () => {
         return;
       }
 
+      // Cache preview in sessionStorage for instant result presentation
+      try {
+        if (file && file.size < 4 * 1024 * 1024) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              if (typeof reader.result === "string") {
+                sessionStorage.setItem(`evidence_preview_${result.id}`, reader.result);
+              }
+            } catch {}
+          };
+          reader.readAsDataURL(file);
+        }
+      } catch {}
+
       // Stage 4: Calibration Certified & Dossier Ready
       setProgress(100);
       setProgressLabel("Examination certified. Opening forensic dossier...");

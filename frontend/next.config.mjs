@@ -18,12 +18,9 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    const backend = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    const backend = process.env.BACKEND_URL;
+    if (!backend) return [];
     return [
-      {
-        source: '/api/media/:path*',
-        destination: `${backend}/api/media/:path*`,
-      },
       {
         source: '/api/py/:path*',
         destination: `${backend}/:path*`,

@@ -5,25 +5,64 @@ import { resolveMediaUrl, cn } from "@/lib/utils";
 import { Eye, Layers, Sliders, AlertCircle, Sparkles, Columns2 } from "lucide-react";
 
 interface ImageHeatmapViewerProps {
+  caseId?: string | null;
   originalUrl?: string | null;
   heatmapUrl?: string | null;
   fileName?: string | null;
+  cachedPreviewUrl?: string | null;
 }
 
 export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
+  caseId,
   originalUrl,
   heatmapUrl,
   fileName,
+  cachedPreviewUrl,
 }) => {
   const [opacity, setOpacity] = useState<number>(65); // Default 65% thermal opacity
   const [viewMode, setViewMode] = useState<"overlay" | "side_by_side" | "original">("overlay");
   const [origFailed, setOrigFailed] = useState(false);
   const [heatmapFailed, setHeatmapFailed] = useState(false);
 
-  const effectiveOrig = resolveMediaUrl(originalUrl);
-  const effectiveHeatmap = resolveMediaUrl(heatmapUrl);
+  const initialOrig = resolveMediaUrl(originalUrl) || cachedPreviewUrl || "";
+  const initialHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? `/api/media/heatmap/${caseId}` : "");
 
-  const hasAnyImage = effectiveOrig || effectiveHeatmap;
+  const [origSrc, setOrigSrc] = useState<string>(initialOrig);
+  const [heatmapSrc, setHeatmapSrc] = useState<string>(initialHeatmap);
+
+  // Sync if props change
+  React.useEffect(() => {
+    const nextOrig = resolveMediaUrl(originalUrl) || cachedPreviewUrl || "";
+    setOrigSrc(nextOrig);
+    setOrigFailed(false);
+  }, [originalUrl, cachedPreviewUrl]);
+
+  React.useEffect(() => {
+    const nextHeatmap = resolveMediaUrl(heatmapUrl) || (caseId ? `/api/media/heatmap/${caseId}` : "");
+    setHeatmapSrc(nextHeatmap);
+    setHeatmapFailed(false);
+  }, [heatmapUrl, caseId]);
+
+  const handleOrigError = () => {
+    // If the primary URL failed and we have a cached preview that hasn't been tried yet, try it
+    if (cachedPreviewUrl && origSrc !== cachedPreviewUrl) {
+      setOrigSrc(cachedPreviewUrl);
+    } else if (caseId && !origSrc.includes(`/api/media/evidence/${caseId}`)) {
+      setOrigSrc(`/api/media/evidence/${caseId}`);
+    } else {
+      setOrigFailed(true);
+    }
+  };
+
+  const handleHeatmapError = () => {
+    if (caseId && !heatmapSrc.includes(`/api/media/heatmap/${caseId}`)) {
+      setHeatmapSrc(`/api/media/heatmap/${caseId}`);
+    } else {
+      setHeatmapFailed(true);
+    }
+  };
+
+  const hasAnyImage = Boolean((origSrc && !origFailed) || (heatmapSrc && !heatmapFailed));
 
   return (
     <div className="space-y-4">
@@ -100,25 +139,25 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
         <div className="space-y-3">
           <div className="relative w-full aspect-[4/3] max-h-[480px] rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-300 dark:border-neutral-800 flex items-center justify-center shadow-inner">
             {/* Base Evidence Image */}
-            {effectiveOrig && !origFailed && (
+            {origSrc && !origFailed && (
               <img
-                src={effectiveOrig}
+                src={origSrc}
                 alt="Submitted Evidence"
                 className="absolute inset-0 w-full h-full object-contain"
-                onError={() => setOrigFailed(true)}
+                onError={handleOrigError}
               />
             )}
 
             {/* Thermal Anomaly Heatmap */}
-            {effectiveHeatmap && !heatmapFailed && (
+            {heatmapSrc && !heatmapFailed && (
               <img
-                src={effectiveHeatmap}
+                src={heatmapSrc}
                 alt="Anomaly Heatmap"
                 className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-100 pointer-events-none ${
-                  effectiveOrig && !origFailed ? "mix-blend-screen" : ""
+                  origSrc && !origFailed ? "mix-blend-screen" : ""
                 }`}
-                style={{ opacity: effectiveOrig && !origFailed ? opacity / 100 : 1 }}
-                onError={() => setHeatmapFailed(true)}
+                style={{ opacity: origSrc && !origFailed ? opacity / 100 : 1 }}
+                onError={handleHeatmapError}
               />
             )}
 
@@ -186,12 +225,12 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
               Original Image
             </div>
             <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-300 dark:border-neutral-800 flex items-center justify-center">
-              {effectiveOrig && !origFailed ? (
+              {origSrc && !origFailed ? (
                 <img
-                  src={effectiveOrig}
+                  src={origSrc}
                   alt="Original"
                   className="w-full h-full object-contain"
-                  onError={() => setOrigFailed(true)}
+                  onError={handleOrigError}
                 />
               ) : (
                 <span className="text-xs text-neutral-500">Original image preview in vault</span>
@@ -204,12 +243,12 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
               Anomaly Heatmap
             </div>
             <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-300 dark:border-neutral-800 flex items-center justify-center">
-              {effectiveHeatmap && !heatmapFailed ? (
+              {heatmapSrc && !heatmapFailed ? (
                 <img
-                  src={effectiveHeatmap}
+                  src={heatmapSrc}
                   alt="Heatmap"
                   className="w-full h-full object-contain"
-                  onError={() => setHeatmapFailed(true)}
+                  onError={handleHeatmapError}
                 />
               ) : (
                 <span className="text-xs text-neutral-500">Forensic heatmap in vault</span>
@@ -221,12 +260,12 @@ export const ImageHeatmapViewer: React.FC<ImageHeatmapViewerProps> = ({
 
       {viewMode === "original" && (
         <div className="w-full aspect-[4/3] max-h-[480px] rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-300 dark:border-neutral-800 flex items-center justify-center">
-          {effectiveOrig && !origFailed ? (
+          {origSrc && !origFailed ? (
             <img
-              src={effectiveOrig}
+              src={origSrc}
               alt="Original"
               className="w-full h-full object-contain"
-              onError={() => setOrigFailed(true)}
+              onError={handleOrigError}
             />
           ) : (
             <span className="text-xs text-neutral-500">Original evidence stored in vault</span>
