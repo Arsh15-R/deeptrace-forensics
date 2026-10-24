@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from app.db.models import PerDetectorScores, VideoFrameAnalysis
 
 class ForensicAnalysisResult(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     verdict: str  # 'likely_authentic' | 'inconclusive' | 'likely_ai_generated'
     calibrated_confidence: float
     confidence_interval_low: float

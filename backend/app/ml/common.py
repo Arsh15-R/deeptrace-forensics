@@ -1,6 +1,6 @@
 import torch
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 def get_torch_device() -> torch.device:
     """Returns CUDA device if GPU available, otherwise CPU."""
@@ -33,6 +33,8 @@ class FlaggedPassage(BaseModel):
     end_char: Optional[int] = None
 
 class StandardizedAnalysisResult(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     job_id: str
     media_type: str  # 'image' | 'video' | 'audio' | 'text' | 'document' | 'url'
     assessment: str  # 'likely_manipulated' | 'no_strong_indicators_detected' | 'inconclusive'

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 
 class DetectorBreakdown(BaseModel):
@@ -26,6 +26,8 @@ class VideoFrameAnalysis(BaseModel):
     anomaly_type: Optional[str] = None
 
 class CaseRecord(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     id: str
     case_number: str
     officer_id: str
