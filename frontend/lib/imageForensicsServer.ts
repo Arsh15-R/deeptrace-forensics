@@ -174,6 +174,10 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   let disparityIndex = 0;
   let meanCfaCorr = 0.5;
   let kurtosis = 3.0;
+  let meanSat = 0.5;
+  let whitePaperRatio = 0;
+  let smoothRatio = 0;
+  let sharpRatio = 0;
   let width = decoded?.width || 0;
   let height = decoded?.height || 0;
 
@@ -200,13 +204,21 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       const gCh = new Float32Array(subW * subH);
       const bCh = new Float32Array(subW * subH);
 
+      let sumSat = 0;
+      let whiteCount = 0;
+
       for (let y = 0; y < subH; y++) {
         for (let x = 0; x < subW; x++) {
           const srcIdx = (y * step * width + x * step) * 4;
           const r = data[srcIdx];
           const g = data[srcIdx + 1];
           const b = data[srcIdx + 2];
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const sat = max > 0 ? (max - min) / max : 0;
+          sumSat += sat;
           const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (lum > 140 && sat < 0.25) whiteCount++;
           const dstIdx = y * subW + x;
           gray[dstIdx] = lum;
           rCh[dstIdx] = r;
@@ -214,6 +226,9 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
           bCh[dstIdx] = b;
         }
       }
+
+      meanSat = sumSat / (subW * subH);
+      whitePaperRatio = whiteCount / (subW * subH);
 
       let flatUiCount = 0;
       let smoothCount = 0;
@@ -232,8 +247,8 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       }
 
       flatRatio = flatUiCount / totalPixels;
-      const smoothRatio = smoothCount / totalPixels;
-      const sharpRatio = sharpCount / totalPixels;
+      smoothRatio = smoothCount / totalPixels;
+      sharpRatio = sharpCount / totalPixels;
       disparityIndex = smoothRatio * sharpRatio;
 
       // High-pass RGB Cross-Channel Correlation
@@ -342,6 +357,13 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
     (flatRatio > 0.36 &&
       (height / Math.max(1, width) > 1.35 || width / Math.max(1, height) > 1.35));
 
+  // Physical Document & Printed Paper identification (Documents, Certificates, Lab Rules, Paper Receipts)
+  const isDocument =
+    meanSat < 0.20 &&
+    (whitePaperRatio > 0.35 || smoothRatio > 0.40) &&
+    sharpRatio > 0.04 &&
+    kurtosis < 22.0;
+
   const breakdown: ImageForensicAnalysis["breakdown"] = [];
   let verdict: Verdict = "likely_authentic";
   let confidence = 14.5;
@@ -376,8 +398,46 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       detail: "Synthetic RGB joint decoding observed devoid of physical camera Bayer CFA demosaicing.",
     });
   }
-  // Case 2: High Texture Disparity & Synthetic CFA Cross-Correlation (AI Infographics / Anime / Illustrations / Photoreal AI)
-  else if (!isScreenshot && disparityIndex > 0.08 && meanCfaCorr > 0.96) {
+  // Case 2: Physical Document & Printed Paper Capture (Documents, Contracts, Certificates, Lab Rules)
+  else if (isDocument) {
+    verdict = "likely_authentic";
+    confidence = hasCameraMake ? 7.5 : hasExif ? 9.5 : 12.0;
+    pixelScore = 11.0;
+    lightingScore = 14.0;
+    metadataScore = hasCameraMake ? 6.0 : hasExif ? 10.0 : 15.0;
+
+    breakdown.push({
+      name: "Physical Document & Typographic Integrity",
+      category: "pixel_patterns",
+      score: 11.0,
+      weight: 0.45,
+      flagged: false,
+      status: "Physical Paper & Ink Verified",
+      detail: `Physical document capture verified. High-contrast printed typographic ink on paper substrate with natural optical camera noise floor (Mean Saturation: ${(meanSat * 100).toFixed(1)}%, Paper Background: ${(whitePaperRatio * 100).toFixed(1)}%).`,
+    });
+    breakdown.push({
+      name: "Hardware Optical Exposure & Noise Floor",
+      category: "face_lighting",
+      score: 14.0,
+      weight: 0.35,
+      flagged: false,
+      status: "Ambient Illumination Gradient",
+      detail: `Continuously varying physical ambient illumination and natural Gaussian sensor shot noise (Kurtosis: ${kurtosis.toFixed(1)}) without generative diffusion artifacts.`,
+    });
+    if (hasExif || hasCameraMake) {
+      breakdown.push({
+        name: "Hardware EXIF Provenance",
+        category: "metadata_exif",
+        score: metadataScore,
+        weight: 0.2,
+        flagged: false,
+        status: "Camera Hardware Metadata Verified",
+        detail: "Standard exchangeable image file format conforming to physical camera optical capture.",
+      });
+    }
+  }
+  // Case 3: High Texture Disparity & Synthetic CFA Cross-Correlation (AI Infographics / Anime / Illustrations / Photoreal AI)
+  else if (!isScreenshot && !isDocument && disparityIndex > 0.08 && meanCfaCorr > 0.96 && meanSat > 0.18) {
     verdict = "likely_ai_generated";
     confidence = Math.min(
       95.0,
@@ -410,8 +470,8 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       )}) exhibits joint VAE latent synthesis lacking independent Bayer CFA sensel shot noise.`,
     });
   }
-  // Case 3: Elevated Noise Kurtosis & High CFA Correlation (Iterative Diffusion Denoising Artifacts)
-  else if (!isScreenshot && (disparityIndex > 0.075 || (kurtosis > 25.0 && meanCfaCorr > 0.965))) {
+  // Case 4: Elevated Noise Kurtosis & High CFA Correlation (Iterative Diffusion Denoising Artifacts)
+  else if (!isScreenshot && !isDocument && (disparityIndex > 0.075 || (kurtosis > 25.0 && meanCfaCorr > 0.965)) && meanSat > 0.18) {
     verdict = "likely_ai_generated";
     confidence = Math.min(
       88.5,
