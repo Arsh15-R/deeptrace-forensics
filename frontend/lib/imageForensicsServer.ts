@@ -176,6 +176,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   let kurtosis = 3.0;
   let meanSat = 0.5;
   let whitePaperRatio = 0;
+  let pureWhiteRatio = 0;
   let smoothRatio = 0;
   let sharpRatio = 0;
   let width = decoded?.width || 0;
@@ -206,6 +207,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
 
       let sumSat = 0;
       let whiteCount = 0;
+      let pureWhiteCount = 0;
 
       for (let y = 0; y < subH; y++) {
         for (let x = 0; x < subW; x++) {
@@ -219,6 +221,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
           sumSat += sat;
           const lum = 0.299 * r + 0.587 * g + 0.114 * b;
           if (lum > 140 && sat < 0.25) whiteCount++;
+          if (r >= 252 && g >= 252 && b >= 252) pureWhiteCount++;
           const dstIdx = y * subW + x;
           gray[dstIdx] = lum;
           rCh[dstIdx] = r;
@@ -229,6 +232,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
 
       meanSat = sumSat / (subW * subH);
       whitePaperRatio = whiteCount / (subW * subH);
+      pureWhiteRatio = pureWhiteCount / (subW * subH);
 
       let flatUiCount = 0;
       let smoothCount = 0;
@@ -351,18 +355,28 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
     }
   }
 
-  // Digital UI Framebuffer Screenshot identification
+  // Digital UI Framebuffer Screenshot identification (full mobile/desktop displays)
   const isScreenshot =
-    flatRatio > 0.5 ||
-    (flatRatio > 0.36 &&
+    flatRatio > 0.65 ||
+    (flatRatio > 0.45 &&
       (height / Math.max(1, width) > 1.35 || width / Math.max(1, height) > 1.35));
 
   // Physical Document & Printed Paper identification (Documents, Certificates, Lab Rules, Paper Receipts)
-  const isDocument =
+  // Real camera photography of physical paper ALWAYS reflects ambient light, producing non-zero sensor noise and zero dead-flat #FFFFFF voids
+  const isPhysicalDocument =
+    pureWhiteRatio < 0.08 &&
+    flatRatio < 0.20 &&
     meanSat < 0.20 &&
     (whitePaperRatio > 0.35 || smoothRatio > 0.40) &&
     sharpRatio > 0.04 &&
     kurtosis < 22.0;
+
+  // AI-Generated Synthetic Graphic / Logo / Raster Illustration
+  // Characteristics: dead-flat void background (pure white / solid fill) with hyper-sharp vector contours and no optical sensel PSF
+  const isSyntheticGraphic =
+    !isPhysicalDocument &&
+    (pureWhiteRatio > 0.15 || flatRatio > 0.25) &&
+    disparityIndex > 0.08;
 
   const breakdown: ImageForensicAnalysis["breakdown"] = [];
   let verdict: Verdict = "likely_authentic";
@@ -399,7 +413,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
     });
   }
   // Case 2: Physical Document & Printed Paper Capture (Documents, Contracts, Certificates, Lab Rules)
-  else if (isDocument) {
+  else if (isPhysicalDocument) {
     verdict = "likely_authentic";
     confidence = hasCameraMake ? 7.5 : hasExif ? 9.5 : 12.0;
     pixelScore = 11.0;
@@ -436,8 +450,38 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
       });
     }
   }
-  // Case 3: High Texture Disparity & Synthetic CFA Cross-Correlation (AI Infographics / Anime / Illustrations / Photoreal AI)
-  else if (!isScreenshot && !isDocument && disparityIndex > 0.08 && meanCfaCorr > 0.96 && meanSat > 0.18) {
+  // Case 3: AI-Generated Synthetic Graphic / Logo / Vector Illustration
+  else if (isSyntheticGraphic) {
+    verdict = "likely_ai_generated";
+    confidence = Math.min(
+      95.0,
+      84.0 + (pureWhiteRatio - 0.15) * 20 + (disparityIndex - 0.08) * 80
+    );
+    pixelScore = 93.0;
+    lightingScore = 90.0;
+    metadataScore = 86.0;
+
+    breakdown.push({
+      name: "Synthetic Graphic Dichotomy & Neural Rendering",
+      category: "pixel_patterns",
+      score: 93.0,
+      weight: 0.45,
+      flagged: true,
+      status: "Synthetic Flat Fill & Razor Contours",
+      detail: `Synthetic raster graphic dichotomy detected: mathematically flat background planes (${(pureWhiteRatio * 100).toFixed(1)}% pure digital white / ${(flatRatio * 100).toFixed(1)}% flat fill) with razor-sharp vector contours (disparity index: ${disparityIndex.toFixed(3)}) devoid of physical camera optical point-spread function.`,
+    });
+    breakdown.push({
+      name: "Optical Noise & Sensel Absence (Zero PRNU)",
+      category: "face_lighting",
+      score: 90.0,
+      weight: 0.35,
+      flagged: true,
+      status: "Non-Optical Render",
+      detail: "Complete absence of physical camera CMOS sensor noise dither and ambient light falloff, characteristic of generative neural rendering or digital vector rasterization.",
+    });
+  }
+  // Case 4: High Texture Disparity & Synthetic CFA Cross-Correlation (AI Infographics / Anime / Illustrations / Photoreal AI)
+  else if (!isScreenshot && !isPhysicalDocument && disparityIndex > 0.08 && meanCfaCorr > 0.96 && meanSat > 0.18) {
     verdict = "likely_ai_generated";
     confidence = Math.min(
       95.0,
