@@ -70,7 +70,18 @@ export async function computeClientSHA256(file: File): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const isBrowser = typeof window !== "undefined";
+const isLocalhost =
+  isBrowser &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? process.env.NEXT_PUBLIC_API_URL.includes("localhost") && !isLocalhost
+    ? ""
+    : process.env.NEXT_PUBLIC_API_URL
+  : isLocalhost
+  ? "http://127.0.0.1:8000"
+  : "";
 
 export function resolveMediaUrl(url?: string | null): string {
   if (!url) return "";
@@ -82,5 +93,7 @@ export function resolveMediaUrl(url?: string | null): string {
   ) {
     return url;
   }
-  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+  const prefix = API_BASE ? (API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE) : "";
+  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+  return `${prefix}${normalizedUrl}`;
 }

@@ -8,7 +8,6 @@ from app.db.database import (
     get_user_by_id,
     update_user_role,
     update_user_status,
-    touch_user_activity,
     delete_user,
     save_audit_log
 )

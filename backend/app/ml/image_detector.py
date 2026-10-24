@@ -5,7 +5,6 @@ import numpy as np
 from PIL import Image
 import cv2
 import scipy.fft
-from scipy.stats import kurtosis
 import torch
 import torchvision.transforms as transforms
 import torchvision.models as models

@@ -14,7 +14,6 @@ import {
   ArrowDownRight,
   Trash2,
   X,
-  Lock,
 } from "lucide-react";
 import { formatDateTimeSeparate, cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/UserAvatar";
