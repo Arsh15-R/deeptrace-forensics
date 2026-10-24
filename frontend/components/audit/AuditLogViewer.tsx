@@ -4,9 +4,12 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { AuditLogRecord } from "@/lib/types";
 import { formatDateTimeSeparate } from "@/lib/utils";
+import { Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { deleteAuditLog, clearAllAuditLogs } from "@/lib/api";
 
 interface AuditLogViewerProps {
   logs: AuditLogRecord[];
+  onRefresh?: () => void;
 }
 
 function summarizeAuditDetails(action: string, details?: Record<string, any> | string | null): string {
@@ -41,6 +44,12 @@ function summarizeAuditDetails(action: string, details?: Record<string, any> | s
     case "REPORT_DOWNLOADED":
     case "REPORT_GENERATED": {
       return "Exported official forensic PDF report";
+    }
+    case "CASE_DELETED": {
+      return `Deleted case record ${d.case_number || d.deleted_case_id || ""}`;
+    }
+    case "AUDIT_LEDGER_PURGED": {
+      return "Purged audit ledger records";
     }
     case "USER_ROLE_PROMOTED": {
       const email = d.target_user_email || d.target_user_id || "User";
@@ -85,10 +94,47 @@ function summarizeAuditDetails(action: string, details?: Record<string, any> | s
   return pairs.length > 0 ? pairs.join(", ") : "Standard operational event";
 }
 
-export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
+export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs, onRefresh }) => {
+  const [logsList, setLogsList] = useState<AuditLogRecord[]>(logs);
   const [filterAction, setFilterAction] = useState<string>("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [logToDelete, setLogToDelete] = useState<AuditLogRecord | null>(null);
+  const [showPurgeConfirm, setShowPurgeConfirm] = useState<boolean>(false);
+  const [purging, setPurging] = useState<boolean>(false);
 
-  const filteredLogs = logs.filter((log) => {
+  React.useEffect(() => {
+    setLogsList(logs);
+  }, [logs]);
+
+  const executeDeleteLog = async (log: AuditLogRecord) => {
+    try {
+      setDeletingId(log.id);
+      await deleteAuditLog(log.id);
+      setLogsList((prev) => prev.filter((item) => item.id !== log.id));
+      setLogToDelete(null);
+      onRefresh?.();
+    } catch (err: any) {
+      alert(err?.message || "Failed to delete audit record.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const executePurge = async () => {
+    try {
+      setPurging(true);
+      await clearAllAuditLogs();
+      setLogsList([]);
+      setShowPurgeConfirm(false);
+      onRefresh?.();
+    } catch (err: any) {
+      alert(err?.message || "Failed to purge audit ledger.");
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  const filteredLogs = logsList.filter((log) => {
     if (filterAction === "all") return true;
     if (filterAction === "USER_MANAGEMENT") {
       return log.action.startsWith("USER_");
@@ -162,6 +208,18 @@ export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
             <option value="REPORT_DOWNLOADED">Report Exports</option>
             <option value="USER_MANAGEMENT">Personnel &amp; Roles</option>
           </select>
+
+          {filteredLogs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowPurgeConfirm(true)}
+              title="Purge all audit ledger entries"
+              className="h-10 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear Ledger</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,14 +234,17 @@ export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
               <th scope="col" className="py-3 px-4 w-[120px] whitespace-nowrap">
                 Action
               </th>
-              <th scope="col" className="py-3 px-4 w-[200px] whitespace-nowrap">
+              <th scope="col" className="py-3 px-4 w-[180px] whitespace-nowrap">
                 Personnel
               </th>
-              <th scope="col" className="py-3 px-4 w-[150px] whitespace-nowrap">
+              <th scope="col" className="py-3 px-4 w-[140px] whitespace-nowrap">
                 Case Reference
               </th>
-              <th scope="col" className="py-3 px-4 min-w-[200px]">
+              <th scope="col" className="py-3 px-4 min-w-[180px]">
                 Summary
+              </th>
+              <th scope="col" className="py-3 px-4 w-[60px] text-right whitespace-nowrap">
+                Action
               </th>
             </tr>
           </thead>
@@ -217,7 +278,7 @@ export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
 
                     {/* Personnel */}
                     <td className="py-3 px-4 min-w-0">
-                      <div className="font-medium text-neutral-900 dark:text-neutral-100 truncate max-w-[200px] leading-snug" title={log.user_email}>
+                      <div className="font-medium text-neutral-900 dark:text-neutral-100 truncate max-w-[180px] leading-snug" title={log.user_email}>
                         {log.user_email}
                       </div>
                       <div className="text-[10px] text-neutral-400 dark:text-neutral-500 font-mono uppercase tracking-wider leading-snug">
@@ -254,12 +315,29 @@ export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
                         {summary}
                       </span>
                     </td>
+
+                    {/* Delete Action */}
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setLogToDelete(log)}
+                        disabled={deletingId === log.id}
+                        title="Delete audit log record"
+                        className="p-1.5 rounded-lg text-neutral-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all disabled:opacity-50 inline-flex items-center justify-center cursor-pointer"
+                      >
+                        {deletingId === log.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-neutral-400 text-xs">
+                <td colSpan={6} className="py-12 text-center text-neutral-400 text-xs">
                   No audit log entries found for this filter.
                 </td>
               </tr>
@@ -267,6 +345,88 @@ export const AuditLogViewer: React.FC<AuditLogViewerProps> = ({ logs }) => {
           </tbody>
         </table>
       </div>
+
+      {/* Delete Single Entry Confirmation Modal */}
+      {logToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  Delete Audit Record?
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                  Permanently remove this audit log entry (<span className="font-mono text-neutral-700 dark:text-neutral-300">{logToDelete.action}</span> by {logToDelete.user_email}). This action cannot be reversed.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setLogToDelete(null)}
+                disabled={Boolean(deletingId)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDeleteLog(logToDelete)}
+                disabled={Boolean(deletingId)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center space-x-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {deletingId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Delete Entry</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purge Entire Ledger Confirmation Modal */}
+      {showPurgeConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  Purge Entire Audit Ledger?
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                  This will permanently clear all compliance audit records across the entire department. A single administrative purge event will be logged.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPurgeConfirm(false)}
+                disabled={purging}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executePurge}
+                disabled={purging}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center space-x-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {purging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Purge Entire Ledger</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

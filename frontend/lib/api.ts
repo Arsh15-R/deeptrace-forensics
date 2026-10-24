@@ -471,6 +471,64 @@ export async function getAuditLogs(
   return res.json();
 }
 
+export async function deleteCase(id: string): Promise<{ success: boolean; deleted_id: string }> {
+  // 1. Direct Supabase delete if client is authenticated
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("cases").delete().or(`id.eq.${id},case_number.eq.${id}`);
+      if (!error) {
+        return { success: true, deleted_id: id };
+      }
+    } catch {}
+  }
+
+  // 2. Fallback to API route
+  const headers = await getHeaders();
+  const endpoint = API_BASE ? `${API_BASE}/api/cases/${id}` : `/api/cases/${id}`;
+  const res = await fetch(endpoint, {
+    method: "DELETE",
+    headers,
+    signal: createRequestSignal(undefined, 15000),
+  });
+
+  return parseApiResponse<{ success: boolean; deleted_id: string }>(res, "Failed to delete case record");
+}
+
+export async function deleteAuditLog(id: string): Promise<{ success: boolean; deleted_id: string }> {
+  // 1. Direct Supabase delete if client is authenticated
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("audit_logs").delete().eq("id", id);
+      if (!error) {
+        return { success: true, deleted_id: id };
+      }
+    } catch {}
+  }
+
+  // 2. Fallback to API route
+  const headers = await getHeaders();
+  const endpoint = API_BASE ? `${API_BASE}/api/audit/logs?id=${id}` : `/api/audit/logs?id=${id}`;
+  const res = await fetch(endpoint, {
+    method: "DELETE",
+    headers,
+    signal: createRequestSignal(undefined, 15000),
+  });
+
+  return parseApiResponse<{ success: boolean; deleted_id: string }>(res, "Failed to delete audit log");
+}
+
+export async function clearAllAuditLogs(): Promise<{ success: boolean }> {
+  const headers = await getHeaders();
+  const endpoint = API_BASE ? `${API_BASE}/api/audit/logs?all=true` : `/api/audit/logs?all=true`;
+  const res = await fetch(endpoint, {
+    method: "DELETE",
+    headers,
+    signal: createRequestSignal(undefined, 20000),
+  });
+
+  return parseApiResponse<{ success: boolean }>(res, "Failed to purge audit ledger");
+}
+
 export async function downloadReportPdf(caseId: string, caseNumber: string): Promise<void> {
   const headers = await getHeaders();
   const res = await fetch(`${API_BASE}/api/reports/${caseId}/pdf`, {

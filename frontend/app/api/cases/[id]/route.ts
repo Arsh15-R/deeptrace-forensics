@@ -101,3 +101,91 @@ export async function GET(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const caseId = params.id;
+    if (!caseId) {
+      return NextResponse.json({ detail: "Case ID is required." }, { status: 400 });
+    }
+
+    // 1. Fetch case record to find file paths for storage cleanup
+    const { data: row } = await supabaseServer
+      .from("cases")
+      .select("id, case_number, storage_path, heatmap_storage_path, file_name")
+      .or(`id.eq.${caseId},case_number.eq.${caseId}`)
+      .maybeSingle();
+
+    if (!row) {
+      return NextResponse.json({ detail: `Case record ${caseId} not found.` }, { status: 404 });
+    }
+
+    // 2. Clean up associated files from evidence-vault storage
+    const filesToRemove: string[] = [];
+    if (row.storage_path) {
+      const cleanPath = row.storage_path.startsWith("/") ? row.storage_path.slice(1) : row.storage_path;
+      filesToRemove.push(cleanPath);
+    }
+    if (row.heatmap_storage_path) {
+      const cleanHeatmap = row.heatmap_storage_path.startsWith("/") ? row.heatmap_storage_path.slice(1) : row.heatmap_storage_path;
+      filesToRemove.push(cleanHeatmap);
+    }
+
+    if (filesToRemove.length > 0) {
+      try {
+        await supabaseServer.storage.from("evidence-vault").remove(filesToRemove);
+      } catch (storageErr) {
+        console.warn(`Storage removal notice for case ${caseId}:`, storageErr);
+      }
+    }
+
+    // 3. Delete case from cases table
+    const { error: deleteErr } = await supabaseServer
+      .from("cases")
+      .delete()
+      .or(`id.eq.${row.id},case_number.eq.${row.case_number}`);
+
+    if (deleteErr) {
+      console.error(`Error deleting case ${caseId}:`, deleteErr);
+      return NextResponse.json({ detail: `Failed to delete case: ${deleteErr.message}` }, { status: 500 });
+    }
+
+    // 4. Log the deletion in audit_logs
+    try {
+      await supabaseServer.from("audit_logs").insert({
+        id: crypto.randomUUID(),
+        case_id: row.id,
+        case_number: row.case_number,
+        user_id: "admin",
+        user_email: "admin@police.dept.gov",
+        user_role: "admin",
+        action: "CASE_DELETED",
+        ip_address: "127.0.0.1",
+        user_agent: "DeepTrace-NextApp/v4.3",
+        details: {
+          deleted_case_id: row.id,
+          case_number: row.case_number,
+          file_name: row.file_name,
+        },
+        created_at: new Date().toISOString(),
+      });
+    } catch (auditErr) {
+      console.warn("Audit log creation notice on case delete:", auditErr);
+    }
+
+    return NextResponse.json({
+      success: true,
+      deleted_id: row.id,
+      case_number: row.case_number,
+    });
+  } catch (err: any) {
+    console.error("API delete case handler error:", err);
+    return NextResponse.json(
+      { detail: err?.message || "Failed to delete case record." },
+      { status: 500 }
+    );
+  }
+}

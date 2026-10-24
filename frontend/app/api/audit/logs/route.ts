@@ -62,3 +62,77 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const logId = searchParams.get("id");
+    const clearAll = searchParams.get("all") === "true";
+
+    // Also check body if JSON was provided
+    let bodyId: string | undefined;
+    let bodyAll = false;
+    try {
+      const body = await request.json().catch(() => ({}));
+      bodyId = body?.id;
+      bodyAll = body?.all === true;
+    } catch {}
+
+    const targetId = logId || bodyId;
+    const shouldClearAll = clearAll || bodyAll;
+
+    if (shouldClearAll) {
+      // Purge all audit logs
+      const { error } = await supabaseServer
+        .from("audit_logs")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+
+      if (error) {
+        console.error("Error clearing audit logs:", error);
+        return NextResponse.json({ detail: error.message }, { status: 500 });
+      }
+
+      // Record a single log entry indicating the ledger was purged
+      try {
+        await supabaseServer.from("audit_logs").insert({
+          id: crypto.randomUUID(),
+          case_id: null,
+          case_number: null,
+          user_id: "admin",
+          user_email: "admin@police.dept.gov",
+          user_role: "admin",
+          action: "AUDIT_LEDGER_PURGED",
+          ip_address: "127.0.0.1",
+          user_agent: "DeepTrace-NextApp/v4.3",
+          details: { purged_at: new Date().toISOString() },
+          created_at: new Date().toISOString(),
+        });
+      } catch {}
+
+      return NextResponse.json({ success: true, cleared: true });
+    }
+
+    if (!targetId) {
+      return NextResponse.json({ detail: "Audit log ID is required." }, { status: 400 });
+    }
+
+    const { error } = await supabaseServer
+      .from("audit_logs")
+      .delete()
+      .eq("id", targetId);
+
+    if (error) {
+      console.error(`Error deleting audit log ${targetId}:`, error);
+      return NextResponse.json({ detail: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, deleted_id: targetId });
+  } catch (err: any) {
+    console.error("API delete audit log handler error:", err);
+    return NextResponse.json(
+      { detail: err?.message || "Failed to delete audit log entry." },
+      { status: 500 }
+    );
+  }
+}

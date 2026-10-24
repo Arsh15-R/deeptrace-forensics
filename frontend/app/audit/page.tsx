@@ -189,7 +189,7 @@ export default function AuditPage() {
               </p>
             </div>
           ) : (
-            <AuditLogViewer logs={logs} />
+            <AuditLogViewer logs={logs} onRefresh={() => fetchLogs("admin")} />
           )}
         </GlassCard>
       )}

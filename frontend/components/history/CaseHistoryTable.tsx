@@ -14,22 +14,30 @@ import {
   Loader2,
   Download,
   ArrowUpRight,
+  Trash2,
 } from "lucide-react";
 import { formatDateTimeSeparate } from "@/lib/utils";
-import { downloadReportPdf } from "@/lib/api";
+import { downloadReportPdf, deleteCase } from "@/lib/api";
 
 interface CaseHistoryTableProps {
   cases: CaseRecord[];
   onRefresh?: () => void;
 }
 
-export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases }) => {
+export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases, onRefresh }) => {
+  const [casesList, setCasesList] = useState<CaseRecord[]>(cases);
   const [searchTerm, setSearchTerm] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [caseToDelete, setCaseToDelete] = useState<CaseRecord | null>(null);
 
-  const filtered = cases.filter((c) => {
+  React.useEffect(() => {
+    setCasesList(cases);
+  }, [cases]);
+
+  const filtered = casesList.filter((c) => {
     const term = searchTerm.trim().toLowerCase();
     const matchesSearch =
       !term ||
@@ -54,6 +62,20 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases }) => 
       alert(err?.message || "Failed to download PDF report.");
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const executeDelete = async (caseRecord: CaseRecord) => {
+    try {
+      setDeletingId(caseRecord.id);
+      await deleteCase(caseRecord.id);
+      setCasesList((prev) => prev.filter((item) => item.id !== caseRecord.id && item.case_number !== caseRecord.case_number));
+      setCaseToDelete(null);
+      onRefresh?.();
+    } catch (err: any) {
+      alert(err?.message || "Failed to delete case record.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -302,6 +324,20 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases }) => 
                           )}
                           <span>PDF</span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCaseToDelete(item)}
+                          disabled={deletingId === item.id}
+                          title="Delete case record"
+                          className="p-1.5 rounded-lg text-xs font-semibold text-neutral-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all disabled:opacity-50 inline-flex items-center justify-center"
+                        >
+                          {deletingId === item.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -326,6 +362,47 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases }) => 
           </tbody>
         </table>
       </div>
+
+      {/* Confirmation Modal */}
+      {caseToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  Delete Case {caseToDelete.case_number}?
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                  This will permanently remove the case record, thermal anomaly heatmap, and stored evidence media from the vault. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCaseToDelete(null)}
+                disabled={Boolean(deletingId)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDelete(caseToDelete)}
+                disabled={Boolean(deletingId)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center space-x-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {deletingId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Delete Permanently</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
