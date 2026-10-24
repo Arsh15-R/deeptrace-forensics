@@ -18,7 +18,60 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 async function fetchServerProfile(token: string): Promise<OfficerProfile> {
-  const res = await fetch(`${API_BASE}/api/auth/me`, {
+  // 1. Direct query from Supabase Realtime Database (profiles table)
+  if (supabase) {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser(token);
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profile) {
+          const rawRole = (profile.role || "viewer").toLowerCase().trim();
+          const role =
+            user.email?.toLowerCase() === "arshrana2468@gmail.com" || rawRole === "admin"
+              ? "admin"
+              : rawRole === "officer"
+              ? "officer"
+              : "viewer";
+
+          return {
+            id: profile.id,
+            email: profile.email,
+            full_name: profile.full_name || user.user_metadata?.full_name || "Authorized Personnel",
+            badge_number: profile.badge_number || `GOOG-${profile.id.slice(0, 4).toUpperCase()}`,
+            department: profile.department || "Cyber Forensics & Evidence Unit",
+            role,
+            avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
+            provider: profile.provider || "google",
+          };
+        }
+      }
+    } catch (sbErr) {
+      console.warn("Direct Supabase profile fetch fallback to API route:", sbErr);
+    }
+  }
+
+  // 2. Query relative or configured API endpoint (/api/auth/me)
+  const isBrowser = typeof window !== "undefined";
+  const isLocalhost =
+    isBrowser &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const apiBase = process.env.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL.includes("localhost") && !isLocalhost
+      ? ""
+      : process.env.NEXT_PUBLIC_API_URL
+    : isLocalhost
+    ? "http://127.0.0.1:8000"
+    : "";
+
+  const endpoint = apiBase ? `${apiBase}/api/auth/me` : "/api/auth/me";
+  const res = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${token}`,
     },

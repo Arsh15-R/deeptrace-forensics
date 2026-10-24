@@ -1,7 +1,13 @@
-import { CaseRecord, AuditLogRecord, StandardizedAnalysisResult, AdminUserRecord } from "./types";
-import { getAuthToken } from "./supabaseClient";
+import { CaseRecord, AuditLogRecord, StandardizedAnalysisResult, AdminUserRecord, UserRole } from "./types";
+import { getAuthToken, supabase } from "./supabaseClient";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const isBrowser = typeof window !== "undefined";
+const isLocalhost = isBrowser && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+// On client in production (e.g. Vercel), default to relative URL ("") so same-origin API routes are hit without mixed-content
+const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? (process.env.NEXT_PUBLIC_API_URL.includes("localhost") && !isLocalhost ? "" : process.env.NEXT_PUBLIC_API_URL)
+  : (isLocalhost ? "http://127.0.0.1:8000" : "");
 
 async function getHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
   const token = await getAuthToken();
@@ -268,8 +274,65 @@ export async function downloadReportPdf(caseId: string, caseNumber: string): Pro
 }
 
 export async function listAdminUsers(): Promise<AdminUserRecord[]> {
+  // 1. Direct query from Supabase Realtime Database (PostgreSQL public.profiles)
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const nowUtc = Date.now();
+        const records: AdminUserRecord[] = data.map((p: any) => {
+          const lastActiveIso = p.updated_at || p.created_at || new Date().toISOString();
+          const lastActiveMs = new Date(lastActiveIso).getTime();
+          const isOnline = nowUtc - lastActiveMs <= 300000;
+
+          const rawRole = (p.role || "viewer").toLowerCase().trim();
+          let roleDisplay: UserRole = "viewer";
+          if (p.email?.toLowerCase() === "arshrana2468@gmail.com" || rawRole === "admin") {
+            roleDisplay = "admin";
+          } else if (rawRole === "officer") {
+            roleDisplay = "officer";
+          } else {
+            roleDisplay = "viewer";
+          }
+
+          return {
+            id: p.id,
+            email: p.email,
+            full_name: p.full_name || p.email?.split("@")[0] || "Authorized Personnel",
+            badge_number: p.badge_number || `GOOG-${p.id.slice(0, 4).toUpperCase()}`,
+            department: p.department || "Cyber Forensics & Evidence Unit",
+            role: roleDisplay,
+            is_active: p.is_active !== false,
+            avatar_url: p.avatar_url || null,
+            provider: p.provider || "google",
+            last_active_at: lastActiveIso,
+            is_online: isOnline,
+            created_at: p.created_at || new Date().toISOString(),
+            updated_at: p.updated_at || new Date().toISOString(),
+          };
+        });
+
+        records.sort((a, b) => {
+          if (a.role === "admin" && b.role !== "admin") return -1;
+          if (b.role === "admin" && a.role !== "admin") return 1;
+          return new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime();
+        });
+
+        return records;
+      }
+    } catch (sbErr) {
+      console.warn("Direct Supabase query fallback to API route:", sbErr);
+    }
+  }
+
+  // 2. Fallback to API endpoint (/api/admin/users)
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/admin/users`, { headers });
+  const endpoint = API_BASE ? `${API_BASE}/api/admin/users` : "/api/admin/users";
+  const res = await fetch(endpoint, { headers });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: "Failed to load personnel roster." }));
@@ -280,8 +343,46 @@ export async function listAdminUsers(): Promise<AdminUserRecord[]> {
 }
 
 export async function updateUserRole(userId: string, role: string): Promise<AdminUserRecord> {
+  const dbRole = role === "viewer" ? "analyst" : role;
+  const nowIso = new Date().toISOString();
+
+  // 1. Direct update to Supabase Realtime Database
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ role: dbRole, updated_at: nowIso })
+        .eq("id", userId)
+        .select()
+        .single();
+
+      if (!error && data) {
+        const roleDisplay: UserRole = data.role === "analyst" ? "viewer" : (data.role as UserRole);
+        return {
+          id: data.id,
+          email: data.email,
+          full_name: data.full_name,
+          badge_number: data.badge_number,
+          department: data.department,
+          role: roleDisplay,
+          is_active: data.is_active !== false,
+          avatar_url: data.avatar_url,
+          provider: data.provider || "google",
+          last_active_at: data.updated_at,
+          is_online: true,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        };
+      }
+    } catch (sbErr) {
+      console.warn("Direct Supabase role update fallback to API route:", sbErr);
+    }
+  }
+
+  // 2. Fallback to API endpoint
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/role`, {
+  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}/role` : `/api/admin/users/${userId}/role`;
+  const res = await fetch(endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify({ role }),
@@ -296,8 +397,45 @@ export async function updateUserRole(userId: string, role: string): Promise<Admi
 }
 
 export async function updateUserStatus(userId: string, isActive: boolean): Promise<AdminUserRecord> {
+  const nowIso = new Date().toISOString();
+
+  // 1. Direct update to Supabase Realtime Database
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ is_active: isActive, updated_at: nowIso })
+        .eq("id", userId)
+        .select()
+        .single();
+
+      if (!error && data) {
+        const roleDisplay: UserRole = data.role === "analyst" ? "viewer" : (data.role as UserRole);
+        return {
+          id: data.id,
+          email: data.email,
+          full_name: data.full_name,
+          badge_number: data.badge_number,
+          department: data.department,
+          role: roleDisplay,
+          is_active: isActive,
+          avatar_url: data.avatar_url,
+          provider: data.provider || "google",
+          last_active_at: data.updated_at,
+          is_online: false,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        };
+      }
+    } catch (sbErr) {
+      console.warn("Direct Supabase status update fallback to API route:", sbErr);
+    }
+  }
+
+  // 2. Fallback to API endpoint
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/status`, {
+  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}/status` : `/api/admin/users/${userId}/status`;
+  const res = await fetch(endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify({ is_active: isActive }),
@@ -312,8 +450,26 @@ export async function updateUserStatus(userId: string, isActive: boolean): Promi
 }
 
 export async function deleteAdminUser(userId: string): Promise<{ deleted_id: string }> {
+  // 1. Direct delete from Supabase Realtime Database
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", userId);
+
+      if (!error) {
+        return { deleted_id: userId };
+      }
+    } catch (sbErr) {
+      console.warn("Direct Supabase delete fallback to API route:", sbErr);
+    }
+  }
+
+  // 2. Fallback to API endpoint
   const headers = await getHeaders();
-  const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+  const endpoint = API_BASE ? `${API_BASE}/api/admin/users/${userId}` : `/api/admin/users/${userId}`;
+  const res = await fetch(endpoint, {
     method: "DELETE",
     headers,
   });
@@ -343,7 +499,8 @@ export async function fetchAuthMe(tokenOverride?: string): Promise<{
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}/api/auth/me`, { headers });
+  const endpoint = API_BASE ? `${API_BASE}/api/auth/me` : "/api/auth/me";
+  const res = await fetch(endpoint, { headers });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: "Authentication verification failed." }));
     throw new Error(errorData.detail || `Server rejected credentials (HTTP ${res.status})`);

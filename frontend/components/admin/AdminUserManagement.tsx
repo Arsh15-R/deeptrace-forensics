@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { AdminUserRecord, UserRole } from "@/lib/types";
 import { listAdminUsers, updateUserRole, updateUserStatus, deleteAdminUser } from "@/lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import {
   ShieldCheck,
   UserCheck,
@@ -55,6 +56,29 @@ export const AdminUserManagement: React.FC = () => {
 
   useEffect(() => {
     loadRoster();
+
+    // Subscribe to Supabase Realtime Database (PostgreSQL public.profiles)
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel("admin-realtime-profiles")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        (payload) => {
+          console.log("[Supabase Realtime] Profile mutation event received:", payload);
+          loadRoster();
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Supabase Realtime] Connected to realtime profiles channel.");
+        }
+      });
+
+    return () => {
+      supabase?.removeChannel(channel);
+    };
   }, []);
 
   const openConfirmation = (
