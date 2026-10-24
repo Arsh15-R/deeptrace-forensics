@@ -29,25 +29,76 @@ class TextDeepfakeDetector:
         
         # Characteristic LLM transitions, hedging patterns, and formulaic clichés
         self.llm_markers = [
+            # High-signal discourse connectives & conclusions
             r"\bin conclusion\b",
+            r"\bto summarize\b",
+            r"\bin summary\b",
             r"\bfurthermore\b",
             r"\bmoreover\b",
+            r"\bconsequently\b",
+            r"\bnotably\b",
+            r"\bsignificantly\b",
+            r"\bfirst and foremost\b",
+            r"\blast but not least\b",
+            r"\ball in all\b",
+            r"\bultimately\b",
+            # Hedging & didactic emphasis
             r"\bit is crucial to\b",
             r"\bit is important to note\b",
-            r"\bdelve into\b",
-            r"\ba testament to\b",
-            r"\btapestry of\b",
+            r"\bit is worth noting\b",
+            r"\bit is essential to\b",
+            r"\bit's important to remember\b",
+            r"\bunderscores the importance\b",
+            r"\bunderscores the need\b",
             r"\bunderscores the\b",
+            r"\bparamount importance\b",
+            r"\bvital aspect\b",
+            r"\bserves as a reminder\b",
+            r"\bstands as a reminder\b",
+            # Characteristic LLM metaphors & vocabulary
+            r"\bdelve into\b",
+            r"\bdelve deeper\b",
+            r"\bdelving into\b",
+            r"\ba testament to\b",
+            r"\bserves as a testament\b",
+            r"\btapestry of\b",
+            r"\brich tapestry\b",
+            r"\bintricate tapestry\b",
             r"\bpivotal role\b",
+            r"\bpivotal moment\b",
             r"\bnuanced understanding\b",
             r"\bseamless integration\b",
+            r"\bseamlessly integrates?\b",
             r"\bharness the power of\b",
+            r"\bharnessing the power\b",
             r"\bplay a vital role\b",
+            r"\bplays a crucial role\b",
+            r"\bplays an indispensable role\b",
             r"\bbeacon of\b",
+            r"\bbeacon of hope\b",
             r"\bintertwined with\b",
-            r"\bconsequently\b",
-            r"\bit is worth noting\b",
-            r"\btransformative potential\b"
+            r"\btransformative potential\b",
+            r"\btransformative power\b",
+            r"\bnavigating the complexities\b",
+            r"\bnavigating the landscape\b",
+            r"\bever-evolving landscape\b",
+            r"\bevolving landscape\b",
+            r"\bparadigm shift\b",
+            r"\bholistic approach\b",
+            r"\bdouble-edged sword\b",
+            r"\bshed light on\b",
+            r"\bat its core\b",
+            r"\ba myriad of\b",
+            r"\bplethora of\b",
+            r"\bfoster innovation\b",
+            r"\bfostering an environment\b",
+            r"\bgroundbreaking\b",
+            r"\brevolutionize\b",
+            r"\breshaping the way\b",
+            r"\bin the realm of\b",
+            r"\bin today's fast-paced world\b",
+            r"\bin today's digital era\b",
+            r"\bin today's interconnected world\b",
         ]
 
     def extract_text_and_meta(self, data: bytes, filename: str) -> Tuple[str, Dict[str, Any]]:
@@ -64,8 +115,14 @@ class TextDeepfakeDetector:
                 doc_meta["PageCount"] = page_count
                 image_count = sum(len(page.images) for page in reader.pages)
                 doc_meta["ImageCount"] = image_count
-                if image_count > 0:
+                
+                # Digital text verification: A document is only a physical scan plate
+                # if there is essentially NO extractable digital text (<20 words) and optical images exist.
+                extracted_words = len(re.findall(r"\b[A-Za-z0-9'-]+\b", text))
+                if image_count > 0 and extracted_words < 20:
                     doc_meta["IsScannedDocument"] = True
+                else:
+                    doc_meta["IsScannedDocument"] = False
                 if meta.creator:
                     doc_meta["Creator"] = str(meta.creator)
                 if meta.producer:
@@ -177,7 +234,7 @@ class TextDeepfakeDetector:
         }
 
         # Guard: Scanned physical document / handwritten notes
-        if doc_meta.get("IsScannedDocument") or (word_count < 40 and doc_meta.get("ImageCount", 0) > 0):
+        if doc_meta.get("IsScannedDocument") or (word_count < 20 and doc_meta.get("ImageCount", 0) > 0):
             duration_ms = int((time.time() - start_time) * 1000)
             page_count = doc_meta.get("PageCount", 1)
             image_count = doc_meta.get("ImageCount", 1)
@@ -211,10 +268,8 @@ class TextDeepfakeDetector:
                 interpretation_note="Low synthetic risk index (13.5%). Optical paper substrate and handwritten strokes conform to authentic physical document capture."
             )
 
-        # Guard: Sample too short (< 40 words)
-        # "Important: Text alone cannot reliably prove whether something was written by AI.
-        # If reliable classification is unavailable, return an inconclusive assessment."
-        if word_count < 40:
+        # Guard: Sample too short (< 20 words)
+        if word_count < 20:
             duration_ms = int((time.time() - start_time) * 1000)
             return StandardizedAnalysisResult(
                 job_id=job_id,
@@ -226,9 +281,9 @@ class TextDeepfakeDetector:
                 suspicion_score=50.0,
                 model_confidence=40.0,
                 key_findings=[
-                    "Text sample contains fewer than 40 words; statistical burstiness and Zipfian stylometry require larger text body."
+                    "Text sample contains fewer than 20 words; statistical burstiness and Zipfian stylometry require a larger text body."
                 ],
-                evidence_summary="Insufficient text volume to perform reliable statistical stylometry or entropy analysis.",
+                evidence_summary="Insufficient text volume (<20 words) to perform reliable statistical stylometry or entropy analysis.",
                 suspicious_regions=[],
                 suspicious_timestamps=[],
                 flagged_passages=[],
@@ -312,99 +367,100 @@ class TextDeepfakeDetector:
         # 6. CALIBRATED MULTI-FEATURE LOGISTIC STYLOMETRY SCORE
         # =====================================================================
         # Sub-scores:
-        # a) Burstiness Score: natural human writing has CV >= 0.40; LLMs often have CV < 0.25
-        if burstiness_ratio < 0.10:
-            burstiness_subscore = 92.0
+        # a) Burstiness Score: natural human writing has CV >= 0.40; LLMs often have CV < 0.28
+        if burstiness_ratio < 0.12:
+            burstiness_subscore = 95.0
             key_findings.append(
                 f"Severe syntactic regularity (CV: {burstiness_ratio:.2f}); sentence length exhibits robotic homogeneity."
             )
-        elif burstiness_ratio < 0.25:
-            burstiness_subscore = 80.0
+        elif burstiness_ratio < 0.28:
+            burstiness_subscore = 85.0
             key_findings.append(
                 f"Abnormally low sentence burstiness (CV: {burstiness_ratio:.2f}); natural human authorial composition exhibits varied clause rhythms."
             )
-        elif burstiness_ratio < 0.35:
-            burstiness_subscore = 55.0
+        elif burstiness_ratio < 0.38:
+            burstiness_subscore = 65.0
         elif burstiness_ratio > 0.45:
             burstiness_subscore = 15.0
             key_findings.append(
                 f"Syntactic rhythm demonstrates natural human burstiness (CV: {burstiness_ratio:.2f}) with diverse clause length variation."
             )
         else:
-            burstiness_subscore = 28.0
+            burstiness_subscore = 25.0
 
         # b) Marker density score:
         marker_density = llm_marker_hits / max(1.0, (word_count / 50.0))
-        if llm_marker_hits >= 3 or marker_density >= 2.5:
-            marker_subscore = 88.0
+        if llm_marker_hits >= 3 or marker_density >= 2.0:
+            marker_subscore = 96.0
             key_findings.append(
                 f"High density of formulaic LLM transitional clichés identified ({llm_marker_hits} occurrences, density: {marker_density:.1f}/50w)."
             )
-        elif llm_marker_hits >= 1:
-            marker_subscore = 65.0
+        elif llm_marker_hits >= 2 or marker_density >= 1.0:
+            marker_subscore = 88.0
             key_findings.append(
-                f"Formulaic LLM transition patterns detected ({llm_marker_hits} occurrence)."
+                f"Formulaic LLM transition markers detected ({llm_marker_hits} occurrences)."
+            )
+        elif llm_marker_hits >= 1:
+            marker_subscore = 74.0
+            key_findings.append(
+                f"Characteristic generative AI phrase detected ({llm_marker_hits} occurrence)."
             )
         else:
-            marker_subscore = 18.0
+            marker_subscore = 15.0
 
         # c) Zipfian & Hapax Score:
-        # For larger texts (>= 120 words), vocabulary uniqueness (hapax >= 0.40) is an authentic human hallmark
-        if word_count >= 120:
+        if word_count >= 100:
             if hapax_ratio >= 0.40:
                 zipf_subscore = 18.0
                 key_findings.append(
                     f"Vocabulary frequency follows natural idiosyncratic lexical dispersion (hapax ratio: {hapax_ratio:.2f})."
                 )
-            elif abs(zipf_s - 1.0) > 0.35 or hapax_ratio < 0.25:
-                zipf_subscore = 78.0
+            elif abs(zipf_s - 1.0) > 0.30 or hapax_ratio < 0.28:
+                zipf_subscore = 80.0
                 key_findings.append(
                     f"Vocabulary distribution deviates from natural Zipfian power law (s={zipf_s:.2f}, hapax ratio: {hapax_ratio:.2f}), indicating sampling tail truncation."
                 )
             else:
                 zipf_subscore = 30.0
         else:
-            # In short-to-medium texts, hapax is naturally elevated; maintain neutral baseline
-            zipf_subscore = 38.0
+            zipf_subscore = 35.0
 
         # d) Yule's K & Entropy score:
         if yule_k < 45.0 and entropy < 4.8:
-            entropy_subscore = 65.0
+            entropy_subscore = 70.0
         else:
             entropy_subscore = 25.0
 
         # Multi-factor weighted composite
         raw_suspicion = (
-            (burstiness_subscore * 0.42) +
-            (marker_subscore * 0.33) +
-            (zipf_subscore * 0.15) +
+            (burstiness_subscore * 0.40) +
+            (marker_subscore * 0.38) +
+            (zipf_subscore * 0.12) +
             (entropy_subscore * 0.10)
         )
 
         # Synergistic indicators for synthetic text:
-        # Robotic sentence cadence (CV < 0.25) combined with at least 1 LLM marker
-        if burstiness_ratio < 0.25 and llm_marker_hits >= 1:
-            raw_suspicion = max(raw_suspicion, 72.0)
-            
-        # Extreme sentence homogeneity alone (CV < 0.10)
-        if burstiness_ratio < 0.10:
-            raw_suspicion = max(raw_suspicion, 70.0)
+        if llm_marker_hits >= 2:
+            raw_suspicion = max(raw_suspicion, 84.0)
+        elif llm_marker_hits >= 1 and burstiness_ratio < 0.38:
+            raw_suspicion = max(raw_suspicion, 80.0)
+        elif burstiness_ratio < 0.15:
+            raw_suspicion = max(raw_suspicion, 78.0)
 
         # Non-Native English / Formal Human Writing Safeguard:
-        # If burstiness is natural (CV >= 0.26) and zero LLM markers, guarantee authentic floor
-        if burstiness_ratio >= 0.26 and llm_marker_hits == 0:
+        # If burstiness is natural (CV >= 0.32) and zero LLM markers, guarantee authentic floor
+        if burstiness_ratio >= 0.32 and llm_marker_hits == 0:
             raw_suspicion = min(raw_suspicion, 18.0)
             key_findings.append(
                 f"Stylometric metrics conform to natural human composition: healthy sentence length variance (CV: {burstiness_ratio:.2f}) and zero formulaic LLM transitional clichés."
             )
 
         # Calibration: Neyman-Pearson limits for text
-        # Cap confidence at 76% to reflect fundamental linguistic humility
         assessment, label, calibrated_suspicion, calibrated_conf = calibrate_assessment(
             raw_suspicion=raw_suspicion,
-            confidence_factor=76.0,
-            threshold_low=34.0,
-            threshold_high=62.0
+            confidence_factor=85.0,
+            threshold_low=32.0,
+            threshold_high=58.0
         )
 
         if assessment == "likely_manipulated":

@@ -183,7 +183,7 @@ export default function CaseResultsPage() {
         {/* Left Column (7 cols): Media Inspector, Heatmap or Video Scrubber */}
         <div className="lg:col-span-7 space-y-6">
           <GlassCard variant="main" className="space-y-5">
-            {caseData.media_type === "image" && (
+            {((caseData.media_type === "image" || (caseData.media_type === "document" && caseData.heatmap_url))) && (
               <ImageHeatmapViewer
                 caseId={caseData.id}
                 originalUrl={caseData.media_url}
@@ -207,10 +207,10 @@ export default function CaseResultsPage() {
               />
             )}
 
-            {caseData.media_type === "text" && (
+            {(caseData.media_type === "text" || caseData.media_type === "document") && (
               <div className="space-y-3">
                 <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                  Submitted Text
+                  {caseData.media_type === "document" ? "Extracted Document Corpus" : "Submitted Text"}
                 </h3>
                 <div className="p-4 rounded-subpanel bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-xs text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
                   {caseData.text_snippet || "Text transcript recorded in vault."}

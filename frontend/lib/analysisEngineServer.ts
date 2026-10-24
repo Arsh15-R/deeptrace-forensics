@@ -5,6 +5,11 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { generateForensicHeatmapPng } from "@/lib/heatmapServer";
 import { analyzeImageForensics } from "@/lib/imageForensicsServer";
 import { analyzeAudioForensics } from "@/lib/audioForensicsServer";
+import {
+  analyzeTextForensics,
+  extractPdfTextAndMetadata,
+  extractDocxTextAndMetadata,
+} from "@/lib/textForensicsServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
 export interface AnalysisInput {
@@ -20,112 +25,8 @@ export interface AnalysisInput {
   department?: string;
 }
 
-/**
- * Extracts plain text, structural scan metadata, and embedded images from PDF bytes.
- */
-function extractPdfInfo(buf: Buffer): {
-  text: string;
-  producer: string;
-  creator: string;
-  pageCount: number;
-  imageCount: number;
-  isScannedDoc: boolean;
-  firstImageBuffer: Buffer | null;
-} {
-  const str = buf.toString("latin1");
-  let text = "";
-  const tjRegex = /\(([^\)]+)\)\s*Tj/g;
-  let m: RegExpExecArray | null;
-  while ((m = tjRegex.exec(str)) !== null) {
-    text += m[1] + " ";
-  }
-  if (!text) {
-    const arrayRegex = /\[([^\]]+)\]\s*TJ/g;
-    while ((m = arrayRegex.exec(str)) !== null) {
-      const inner = m[1].replace(/-\d+/g, "").replace(/[()]/g, "");
-      text += inner + " ";
-    }
-  }
-  const prodMatch = str.match(/\/Producer\s*\(([^)]+)\)/);
-  const producer = prodMatch ? prodMatch[1] : "";
-  const creatMatch = str.match(/\/Creator\s*\(([^)]+)\)/);
-  const creator = creatMatch ? creatMatch[1] : "";
-
-  // Multi-page document & embedded raster scan extraction
-  const pageMatches = str.match(/\/Type\s*\/Page\b/g);
-  const pageCount = pageMatches ? pageMatches.length : 1;
-  const imageMatches = str.match(/\/Subtype\s*\/Image\b/g);
-  const imageCount = imageMatches ? imageMatches.length : 0;
-  const isScannedDoc = imageCount > 0;
-
-  // Extract first embedded JPEG raster scan if present
-  let firstImageBuffer: Buffer | null = null;
-  const jpgStart = buf.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
-  if (jpgStart !== -1) {
-    const jpgEnd = buf.indexOf(Buffer.from([0xff, 0xd9]), jpgStart);
-    if (jpgEnd !== -1 && jpgEnd > jpgStart) {
-      firstImageBuffer = buf.subarray(jpgStart, jpgEnd + 2);
-    }
-  }
-
-  return {
-    text: text.trim(),
-    producer,
-    creator,
-    pageCount,
-    imageCount,
-    isScannedDoc,
-    firstImageBuffer,
-  };
-}
-
-/**
- * Extracts plain text and metadata from DOCX bytes using pure Node.js zip traversal.
- */
-function extractDocxInfo(buf: Buffer): { text: string; author: string } {
-  let pos = 0;
-  let text = "";
-  let author = "";
-
-  while (pos < buf.length - 30) {
-    if (buf.readUInt32LE(pos) === 0x04034b50) {
-      const compMethod = buf.readUInt16LE(pos + 8);
-      const compSize = buf.readUInt32LE(pos + 18);
-      const fnLen = buf.readUInt16LE(pos + 26);
-      const extraLen = buf.readUInt16LE(pos + 28);
-      const fn = buf.toString("utf8", pos + 30, pos + 30 + fnLen);
-      const dataStart = pos + 30 + fnLen + extraLen;
-      const dataEnd = dataStart + compSize;
-
-      if (fn === "word/document.xml" && dataEnd <= buf.length) {
-        try {
-          const compData = buf.subarray(dataStart, dataEnd);
-          const decomp = compMethod === 8 ? zlib.inflateRawSync(compData) : compData;
-          const xml = decomp.toString("utf8");
-          const wtRegex = /<w:t[^>]*>([^<]+)<\/w:t>/g;
-          let wm: RegExpExecArray | null;
-          while ((wm = wtRegex.exec(xml)) !== null) {
-            text += wm[1] + " ";
-          }
-        } catch {
-          // Fallback ignore decompression failure
-        }
-      } else if (fn === "docProps/core.xml" && dataEnd <= buf.length) {
-        try {
-          const compData = buf.subarray(dataStart, dataEnd);
-          const decomp = compMethod === 8 ? zlib.inflateRawSync(compData) : compData;
-          const xml = decomp.toString("utf8");
-          const aMatch = xml.match(/<dc:creator>([^<]+)<\/dc:creator>/);
-          if (aMatch) author = aMatch[1];
-        } catch {}
-      }
-      pos = dataEnd;
-    } else {
-      pos++;
-    }
-  }
-  return { text: text.trim(), author };
-}
+const extractPdfInfo = extractPdfTextAndMetadata;
+const extractDocxInfo = extractDocxTextAndMetadata;
 
 export async function executeForensicAnalysis(input: AnalysisInput): Promise<CaseRecord> {
   const caseId = `TL-ANL-2026-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
@@ -282,167 +183,37 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // MODALITY 4 & 5: TEXT & DOCUMENT FORENSICS (PDF, DOCX, TXT)
   // =========================================================================
   else if (input.mediaType === "text" || input.mediaType === "document") {
-    let extractedText = input.text || "";
-    let docProvenance = "";
-    let pdfInfo: ReturnType<typeof extractPdfInfo> | null = null;
-
-    if (input.buffer) {
-      if (lowerName.endsWith(".pdf") || input.buffer.subarray(0, 4).toString() === "%PDF") {
-        pdfInfo = extractPdfInfo(input.buffer);
-        if (pdfInfo.text) extractedText = pdfInfo.text;
-        if (pdfInfo.firstImageBuffer) pdfScannedImageBuffer = pdfInfo.firstImageBuffer;
-        if (pdfInfo.producer || pdfInfo.creator) {
-          docProvenance = `PDF Producer: ${pdfInfo.producer || "Unknown"}, Creator: ${pdfInfo.creator || "Unknown"}, Pages: ${pdfInfo.pageCount}`;
-        }
-      } else if (lowerName.endsWith(".docx") || input.buffer.subarray(0, 4).toString("hex") === "504b0304") {
-        const docxInfo = extractDocxInfo(input.buffer);
-        if (docxInfo.text) extractedText = docxInfo.text;
-        if (docxInfo.author) {
-          docProvenance = `DOCX Author: ${docxInfo.author}`;
-        }
-      } else if (!extractedText) {
-        extractedText = input.buffer.toString("utf-8");
+    const tTextStart = Date.now();
+    if (input.buffer && (lowerName.endsWith(".pdf") || input.buffer.subarray(0, 4).toString() === "%PDF")) {
+      const pdfMeta = extractPdfTextAndMetadata(input.buffer);
+      if (pdfMeta.firstImageBuffer) {
+        pdfScannedImageBuffer = pdfMeta.firstImageBuffer;
       }
     }
 
-    textSnippet = extractedText.slice(0, 300);
-    const words = extractedText.trim().split(/\s+/).filter(Boolean);
-    const wordCount = words.length;
+    const textAnalysis = await analyzeTextForensics({
+      text: input.text,
+      buffer: input.buffer,
+      filename: input.filename,
+      caseRef: input.caseRef,
+    });
 
-    const isScannedPdf = !!(pdfInfo && (pdfInfo.isScannedDoc || (wordCount < 40 && pdfInfo.imageCount > 0)));
-    if (isScannedPdf && !textSnippet) {
-      textSnippet = `[Physical Document: ${pdfInfo!.pageCount} scanned handwritten/printed pages without digital OCR text layer]`;
+    verdict = textAnalysis.verdict;
+    confidence = textAnalysis.confidence;
+    pixelScore = textAnalysis.perDetectorScores.pixel_patterns;
+    lightingScore = textAnalysis.perDetectorScores.face_lighting;
+    metadataScore = textAnalysis.perDetectorScores.metadata_exif;
+    breakdown.push(...textAnalysis.perDetectorScores.breakdown);
+
+    if (textAnalysis.extractedText) {
+      textSnippet = textAnalysis.extractedText.slice(0, 2000);
+    } else if (textAnalysis.isScannedDocument) {
+      textSnippet = `[Physical Document Scan: Verified paper substrate without digital OCR text layer]`;
     }
 
-    // Sentence length calculation for burstiness
-    const rawSentences = extractedText.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 3);
-    const sentLengths = rawSentences.map((s) => s.split(/\s+/).filter(Boolean).length).filter((l) => l > 0);
-    const meanSent = sentLengths.length ? sentLengths.reduce((a, b) => a + b, 0) / sentLengths.length : 0;
-    const variance = sentLengths.length ? sentLengths.reduce((a, b) => a + Math.pow(b - meanSent, 2), 0) / sentLengths.length : 0;
-    const stdSent = Math.sqrt(variance);
-    const burstiness = meanSent > 0 ? stdSent / meanSent : 0;
-
-    // Characteristic LLM formulaic transition markers
-    const llmMarkers = [
-      /\bdelve into\b/i,
-      /\ba testament to\b/i,
-      /\bpivotal role\b/i,
-      /\btapestry of\b/i,
-      /\bin conclusion\b/i,
-      /\bfurthermore\b/i,
-      /\bmoreover\b/i,
-      /\bit is crucial to\b/i,
-      /\bit is important to note\b/i,
-      /\bnuanced understanding\b/i,
-      /\bseamless integration\b/i,
-      /\bharness the power of\b/i,
-      /\btransformative potential\b/i,
-    ];
-    let markerHits = 0;
-    for (const pat of llmMarkers) {
-      if (pat.test(extractedText)) markerHits++;
-    }
-
-    if (isScannedPdf) {
-      verdict = "likely_authentic";
-      confidence = 13.5; // Low synthetic risk index (86.5% authenticity confidence)
-      pixelScore = 12.0;
-      lightingScore = 14.0;
-      metadataScore = 10.0;
-      breakdown.push({
-        name: "Physical Document & Handwritten Paper Substrate",
-        category: "pixel_patterns",
-        score: 12.0,
-        weight: 0.45,
-        flagged: false,
-        status: "Physical Paper & Ink Verified",
-        detail: `Verified multi-page physical document scan (${pdfInfo!.pageCount} pages, ${pdfInfo!.imageCount} scan plates). Paper substrate exhibits authentic ink stroke pressure dynamics and natural optical camera noise floor without generative synthesis.`,
-      });
-      breakdown.push({
-        name: "Hardware Optical Exposure & Noise Floor",
-        category: "face_lighting",
-        score: 14.0,
-        weight: 0.35,
-        flagged: false,
-        status: "Ambient Illumination Gradient",
-        detail: "Continuous ambient illumination gradients and paper fiber shot noise verified across scanned document plates without synthetic raster voids.",
-      });
-      breakdown.push({
-        name: "Document Acquisition Container",
-        category: "metadata_exif",
-        score: 10.0,
-        weight: 0.20,
-        flagged: false,
-        status: "Physical Scanner Container",
-        detail: docProvenance || `Standard PDF container comprising ${pdfInfo!.pageCount} pages conforming to physical hardware document acquisition.`,
-      });
-    } else if (wordCount < 40) {
-      verdict = "inconclusive";
-      confidence = 50.0;
-      pixelScore = 50.0;
-      metadataScore = 50.0;
-      breakdown.push({
-        name: "Sample Size Constraint",
-        category: "pixel_patterns",
-        score: 50.0,
-        weight: 0.5,
-        flagged: false,
-        status: "Inconclusive (<40 words)",
-        detail: "Text corpus contains fewer than 40 words; statistical Zipfian stylometry and syntactic burstiness require larger text volume.",
-      });
-    } else if (markerHits >= 2 || (burstiness < 0.22 && markerHits >= 1)) {
-      verdict = "likely_ai_generated";
-      confidence = 83.5;
-      pixelScore = 84.0;
-      lightingScore = 80.0;
-      metadataScore = 75.0;
-      breakdown.push({
-        name: "Formulaic LLM Clichés & Stylometry",
-        category: "pixel_patterns",
-        score: 84.0,
-        weight: 0.5,
-        flagged: true,
-        status: "Formulaic LLM Distribution",
-        detail: `Identified ${markerHits} characteristic generative transition markers and robotic syntactic rhythm (Burstiness CV: ${burstiness.toFixed(2)}).`,
-      });
-      if (docProvenance) {
-        breakdown.push({
-          name: "Document Provenance",
-          category: "metadata_exif",
-          score: 65.0,
-          weight: 0.3,
-          flagged: false,
-          status: "Document Container",
-          detail: docProvenance,
-        });
-      }
-    } else {
-      verdict = "likely_authentic";
-      confidence = 15.5; // Low synthetic risk index
-      pixelScore = 16.0;
-      lightingScore = 18.0;
-      metadataScore = 14.0;
-      breakdown.push({
-        name: "Natural Human Stylometric Variance",
-        category: "pixel_patterns",
-        score: 16.0,
-        weight: 0.5,
-        flagged: false,
-        status: "Human Stylometry",
-        detail: `High sentence length diversity (Burstiness CV: ${burstiness.toFixed(2)}) and total absence of formulaic generative transition markers.`,
-      });
-      if (docProvenance) {
-        breakdown.push({
-          name: "Document Provenance",
-          category: "metadata_exif",
-          score: 12.0,
-          weight: 0.3,
-          flagged: false,
-          status: "Document Container Verified",
-          detail: docProvenance,
-        });
-      }
-    }
+    console.log(
+      `[ForensicEngine ${caseId}] Text & Document forensic analysis completed in ${Date.now() - tTextStart}ms: ${verdict} (${confidence}%)`
+    );
   }
 
   const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : "");

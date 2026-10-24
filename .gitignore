@@ -79,3 +79,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local tools & large binaries
+tools/
