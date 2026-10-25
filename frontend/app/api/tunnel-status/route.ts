@@ -9,7 +9,7 @@ export async function GET() {
     const { data, error } = await supabaseServer
       .from("audit_logs")
       .select("details, created_at")
-      .eq("action", "tunnel_heartbeat")
+      .in("action", ["tunnel_heartbeat", "TUNNEL_HEARTBEAT"])
       .order("created_at", { ascending: false })
       .limit(1);
 
