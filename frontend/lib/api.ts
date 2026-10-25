@@ -6,13 +6,16 @@ export { apiUrl };
 
 /**
  * Lightweight health verification against /api/health.
- * Detects offline laptop server / Cloudflare tunnel early before large uploads begin.
+ * Auto-discovers the active Cloudflare Tunnel from Supabase (/api/tunnel-status)
+ * if the default or baked-in tunnel URL is unreachable.
  */
 export async function checkServerHealth(signal?: AbortSignal): Promise<{ ok: boolean; error?: string }> {
-  const endpoint = apiUrl("/api/health");
+  let endpoint = apiUrl("/api/health");
+
+  // Step 1: Probe current endpoint
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
     if (signal) {
       signal.addEventListener("abort", () => controller.abort(), { once: true });
     }
@@ -20,16 +23,46 @@ export async function checkServerHealth(signal?: AbortSignal): Promise<{ ok: boo
       method: "GET",
       signal: controller.signal,
     }).finally(() => clearTimeout(timeoutId));
-    return { ok: res.ok };
-  } catch {
-    const isRemote = Boolean(process.env.NEXT_PUBLIC_API_URL && !endpoint.startsWith("/"));
-    return {
-      ok: false,
-      error: isRemote
-        ? "Analysis server is offline. Start the laptop server and tunnel."
-        : "Forensic service is temporarily unreachable.",
-    };
+
+    if (res.ok) {
+      return { ok: true };
+    }
+  } catch {}
+
+  // Step 2: Auto-discovery fallback if running on Vercel
+  if (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
+    try {
+      const discoRes = await fetch("/api/tunnel-status", { method: "GET" });
+      if (discoRes.ok) {
+        const discoData = await discoRes.json();
+        const activeTunnel = discoData?.tunnel_url?.trim();
+        if (activeTunnel && !endpoint.startsWith(activeTunnel)) {
+          const retryEndpoint = `${activeTunnel.replace(/\/+$/, "")}/api/health`;
+          const controller2 = new AbortController();
+          const timeoutId2 = setTimeout(() => controller2.abort(), 4000);
+          const retryRes = await fetch(retryEndpoint, {
+            method: "GET",
+            signal: controller2.signal,
+          }).finally(() => clearTimeout(timeoutId2));
+
+          if (retryRes.ok) {
+            localStorage.setItem("deeptrace_api_url", activeTunnel);
+            (window as any).__DEEPTRACE_DISCOVERED_TUNNEL__ = activeTunnel;
+            console.log(`[DeepTrace Client] Auto-discovered active laptop tunnel: ${activeTunnel}`);
+            return { ok: true };
+          }
+        }
+      }
+    } catch {}
   }
+
+  const isRemote = Boolean(endpoint && !endpoint.startsWith("/"));
+  return {
+    ok: false,
+    error: isRemote
+      ? "Analysis server is offline. Start the laptop server and tunnel."
+      : "Forensic service is temporarily unreachable.",
+  };
 }
 
 async function getHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {

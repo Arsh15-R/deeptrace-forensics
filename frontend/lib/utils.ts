@@ -73,9 +73,13 @@ export async function computeClientSHA256(file: File): Promise<string> {
 const SUPABASE_STORAGE_VAULT = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
 
 /**
- * Resolves an API path against NEXT_PUBLIC_API_URL if configured,
- * otherwise falling back to same-origin relative URLs.
- * On Vercel, if NEXT_PUBLIC_API_URL was empty at build time, falls back to the active Cloudflare Tunnel.
+ * Resolves an API path against the active backend URL.
+ * Priority order:
+ * 1. If running on localhost/127.0.0.1 -> direct local relative path
+ * 2. localStorage override "deeptrace_api_url" (allows dynamic discovery / manual updates without redeploy)
+ * 3. window.__DEEPTRACE_DISCOVERED_TUNNEL__ (auto-discovered live tunnel from Supabase)
+ * 4. NEXT_PUBLIC_API_URL environment variable
+ * 5. Fallback for Vercel production to active Cloudflare Tunnel
  */
 export function apiUrl(path: string): string {
   // If running locally in browser (localhost / 127.0.0.1), use direct local relative path
@@ -86,15 +90,20 @@ export function apiUrl(path: string): string {
     }
   }
 
-  // Check environment variable first, then optional localStorage override
-  let base = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (!base && typeof window !== "undefined") {
-    base = localStorage.getItem("deeptrace_api_url")?.trim() || "";
+  // Priority 1: localStorage override or runtime discovered tunnel
+  let base = "";
+  if (typeof window !== "undefined") {
+    base = localStorage.getItem("deeptrace_api_url")?.trim() || (window as any).__DEEPTRACE_DISCOVERED_TUNNEL__ || "";
   }
 
-  // Fallback for Vercel production to route heavy forensic analysis to laptop server
+  // Priority 2: Baked-in NEXT_PUBLIC_API_URL environment variable
+  if (!base) {
+    base = process.env.NEXT_PUBLIC_API_URL?.trim() || "";
+  }
+
+  // Priority 3: Fallback for Vercel production to active Cloudflare Tunnel
   if (!base && typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
-    base = "https://red-frost-licenses-canal.trycloudflare.com";
+    base = "https://chapters-profit-springfield-marketing.trycloudflare.com";
   }
 
   if (!base) return path.startsWith("/") ? path : `/${path}`;
