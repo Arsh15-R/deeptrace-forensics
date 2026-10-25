@@ -19,7 +19,7 @@ export const EvidenceLedgerCard: React.FC<EvidenceLedgerCardProps> = ({ caseData
     setDownloading(true);
     setDownloadError(null);
     try {
-      await downloadReportPdf(caseData.id, caseData.case_number);
+      await downloadReportPdf(caseData.id, caseData.case_number, caseData);
     } catch (err: any) {
       setDownloadError(err.message || "Failed to download PDF report");
     } finally {

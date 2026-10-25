@@ -17,6 +17,8 @@ class PerDetectorScores(BaseModel):
     motion_temporal: Optional[float] = Field(None, ge=0.0, le=100.0, description="Temporal frame-to-frame warping, blinking cadence, optical flow")
     audio_spectral: Optional[float] = Field(None, ge=0.0, le=100.0, description="Voice cloning vocoder anomalies, spectral cutoff, phase coherence")
     breakdown: List[DetectorBreakdown] = []
+    in_text_metadata: Optional[Dict[str, Any]] = None
+    inTextMetadata: Optional[Dict[str, Any]] = None
 
 class VideoFrameAnalysis(BaseModel):
     frame_number: int

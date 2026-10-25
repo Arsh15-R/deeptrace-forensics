@@ -57,7 +57,8 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases, onRef
   const handleDownload = async (id: string, caseNumber: string) => {
     try {
       setDownloadingId(id);
-      await downloadReportPdf(id, caseNumber);
+      const targetCase = casesList.find((c) => c.id === id || c.case_number === caseNumber);
+      await downloadReportPdf(id, caseNumber, targetCase);
     } catch (err: any) {
       alert(err?.message || "Failed to download PDF report.");
     } finally {

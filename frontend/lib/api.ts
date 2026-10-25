@@ -1,6 +1,7 @@
 import { CaseRecord, AuditLogRecord, StandardizedAnalysisResult, AdminUserRecord, UserRole } from "./types";
 import { getAuthToken, supabase } from "./supabaseClient";
 import { apiUrl } from "./utils";
+import { generateForensicPdfBuffer } from "./pdfReportGenerator";
 
 export { apiUrl };
 
@@ -643,30 +644,63 @@ export async function clearAllAuditLogs(): Promise<{ success: boolean }> {
   return parseApiResponse<{ success: boolean }>(res, "Failed to purge audit ledger");
 }
 
-export async function downloadReportPdf(caseId: string, caseNumber: string): Promise<void> {
-  const headers = await getHeaders();
-  const res = await fetch(apiUrl(`/api/reports/${caseId}/pdf`), {
-    headers,
-  });
+export async function downloadReportPdf(
+  caseId: string,
+  caseNumber: string,
+  fallbackCaseData?: CaseRecord
+): Promise<void> {
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+      if (a.parentNode) {
+        a.parentNode.removeChild(a);
+      }
+    }, 100);
+  };
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Failed to compile and download PDF report." }));
-    throw new Error(errorData.detail || `Report export error (HTTP ${res.status})`);
+  const filename = `DeepTrace_Forensic_Report_${caseNumber}.pdf`;
+
+  // 1. Primary Strategy: Server API route
+  try {
+    const headers = await getHeaders();
+    const endpoint = apiUrl(`/api/reports/${encodeURIComponent(caseId)}/pdf`);
+    let res = await fetch(endpoint, { headers });
+
+    // Fallback if cross-origin or tunnel hit returned non-ok
+    if (!res.ok && typeof window !== "undefined" && endpoint.startsWith("http")) {
+      const relEndpoint = `/api/reports/${encodeURIComponent(caseId)}/pdf`;
+      res = await fetch(relEndpoint, { headers });
+    }
+
+    if (res.ok) {
+      const blob = await res.blob();
+      triggerDownload(blob, filename);
+      return;
+    }
+  } catch (netErr) {
+    console.warn("[downloadReportPdf] Network request to server failed:", netErr);
   }
 
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `DeepTrace_Forensic_Report_${caseNumber}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    window.URL.revokeObjectURL(url);
-    if (a.parentNode) {
-      a.parentNode.removeChild(a);
+  // 2. Client-side compilation fallback
+  if (fallbackCaseData) {
+    try {
+      console.log("[downloadReportPdf] Compiling forensic PDF report client-side fallback...");
+      const pdfBytes = generateForensicPdfBuffer(fallbackCaseData);
+      const blob = new Blob([pdfBytes as any], { type: "application/pdf" });
+      triggerDownload(blob, filename);
+      return;
+    } catch (clientErr: any) {
+      console.error("[downloadReportPdf] Client-side compilation error:", clientErr);
     }
-  }, 100);
+  }
+
+  throw new Error("Failed to compile and download PDF report. Please verify server connection.");
 }
 
 export async function listAdminUsers(): Promise<AdminUserRecord[]> {
