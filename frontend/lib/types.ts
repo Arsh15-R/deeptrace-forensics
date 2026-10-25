@@ -14,6 +14,37 @@ export interface DetectorBreakdown {
   detail: string;
 }
 
+export interface InTextMetadata {
+  genre: string;
+  academic?: {
+    studentName?: string;
+    rollNumbers?: string[];
+    university?: string;
+    college?: string;
+    phone?: string;
+    email?: string;
+    declaration?: boolean;
+  };
+  financial?: {
+    transactionIds?: string[];
+    banks?: string[];
+    amounts?: number[];
+  };
+  code?: {
+    oopFeatures?: string[];
+    languages?: string[];
+  };
+  structural?: {
+    sections?: string[];
+  };
+  socialAttribution?: {
+    authorHandle?: string;
+    topic?: string;
+  };
+  integrityScore?: number;
+  integrityStatus?: string;
+}
+
 export interface PerDetectorScores {
   pixel_patterns: number;
   face_lighting: number;
@@ -21,6 +52,7 @@ export interface PerDetectorScores {
   motion_temporal?: number | null;
   audio_spectral?: number | null;
   breakdown: DetectorBreakdown[];
+  inTextMetadata?: InTextMetadata | null;
 }
 
 export interface VideoFrameAnalysis {

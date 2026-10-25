@@ -41,6 +41,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   let sha256 = "";
   let fileSizeBytes = 0;
   let textSnippet: string | null = null;
+  let inTextMetadata: any = null;
   let pdfScannedImageBuffer: Buffer | null = null;
   let mimeType = "application/octet-stream";
 
@@ -203,6 +204,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     pixelScore = textAnalysis.perDetectorScores.pixel_patterns;
     lightingScore = textAnalysis.perDetectorScores.face_lighting;
     metadataScore = textAnalysis.perDetectorScores.metadata_exif;
+    inTextMetadata = textAnalysis.perDetectorScores.inTextMetadata || null;
     breakdown.push(...textAnalysis.perDetectorScores.breakdown);
 
     if (textAnalysis.extractedText) {
@@ -325,6 +327,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
       motion_temporal: temporalScore,
       audio_spectral: audioScore,
       breakdown,
+      inTextMetadata,
     },
     heatmap_url: publicHeatmapUrl,
     heatmap_path: heatmapRelPath,

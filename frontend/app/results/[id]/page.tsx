@@ -14,6 +14,7 @@ import { VideoTimelineScrubber } from "@/components/results/VideoTimelineScrubbe
 import { AudioTimelineViewer } from "@/components/results/AudioTimelineViewer";
 import { EvidenceLedgerCard } from "@/components/results/EvidenceLedgerCard";
 import { InvestigativeNotice } from "@/components/results/InvestigativeNotice";
+import { InTextMetadataCard } from "@/components/results/InTextMetadataCard";
 import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
@@ -208,13 +209,17 @@ export default function CaseResultsPage() {
             )}
 
             {(caseData.media_type === "text" || caseData.media_type === "document") && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                  {caseData.media_type === "document" ? "Extracted Document Corpus" : "Submitted Text"}
-                </h3>
-                <div className="p-4 rounded-subpanel bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-xs text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
-                  {caseData.text_snippet || "Text transcript recorded in vault."}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                    {caseData.media_type === "document" ? "Extracted Document Corpus" : "Submitted Text"}
+                  </h3>
+                  <div className="p-4 rounded-subpanel bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-xs text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
+                    {caseData.text_snippet || "Text transcript recorded in vault."}
+                  </div>
                 </div>
+
+                <InTextMetadataCard metadata={caseData.per_detector_scores?.inTextMetadata} />
               </div>
             )}
           </GlassCard>

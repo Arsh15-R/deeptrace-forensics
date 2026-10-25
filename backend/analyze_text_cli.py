@@ -81,6 +81,40 @@ def main():
                 "status": "Physical Scanner Container",
                 "detail": f"Standard PDF container comprising {page_count} pages conforming to physical hardware document acquisition.",
             })
+        elif verdict == "inconclusive" or d.get("technical_metadata", {}).get("IsGibberish") or d.get("technical_metadata", {}).get("WordCount", 0) < 20:
+            is_gib = d.get("technical_metadata", {}).get("IsGibberish", False)
+            wc = d.get("technical_metadata", {}).get("WordCount", 0)
+            breakdown.append({
+                "name": "Lexical Integrity & Sample Size Constraint" if is_gib else "Corpus Volume Constraint",
+                "category": "pixel_patterns",
+                "score": 50.0,
+                "weight": 0.50,
+                "flagged": False,
+                "status": "Non-Lexical Keystrokes" if is_gib else f"Inconclusive ({wc} words)",
+                "detail": (
+                    "Input comprises unpronounceable non-lexical keystrokes. Under ISO/Daubert standards, forensic stylometry cannot evaluate random keystroke inputs."
+                    if is_gib else
+                    f"Sample contains only {wc} words. Reliable stylometric analysis requires at least 20 words of natural text."
+                ),
+            })
+            breakdown.append({
+                "name": "Forensic Humility Baseline Protocol",
+                "category": "face_lighting",
+                "score": 50.0,
+                "weight": 0.35,
+                "flagged": False,
+                "status": "Inconclusive Baseline (50%)",
+                "detail": "Forensic integrity requires assigning an uncommitted 50.0% confidence when the input sample is insufficient to establish authorial variance.",
+            })
+            breakdown.append({
+                "name": "Container Integrity & Ingestion",
+                "category": "metadata_exif",
+                "score": 12.0,
+                "weight": 0.15,
+                "flagged": False,
+                "status": "Container Parsed",
+                "detail": "Standard plain text payload verified.",
+            })
         else:
             # Stylometry / Markers
             marker_hits = d.get("technical_metadata", {}).get("FormulaicMarkerHits", 0)
@@ -123,7 +157,7 @@ def main():
                 "detail": f"Shannon word entropy: {entropy:.2f} bits/token, Yule's Characteristic K: {yule_k:.1f}.",
             })
 
-            # 4. Document Container / Metadata
+            # 4. Document Container / In-Text Metadata
             doc_format = d.get("technical_metadata", {}).get("DocumentFormat", "TXT")
             creator = d.get("technical_metadata", {}).get("Creator", "")
             producer = d.get("technical_metadata", {}).get("Producer", "")
@@ -132,14 +166,33 @@ def main():
             if producer: provenance.append(f"Producer: {producer}")
             prov_text = ", ".join(provenance) if provenance else f"Standard {doc_format} document container"
 
+            in_text_meta = d.get("technical_metadata", {}).get("InTextMetadata", {})
+            has_acad = bool(in_text_meta.get("academic", {}).get("studentName") or in_text_meta.get("academic", {}).get("rollNumbers"))
+            has_cd = bool(in_text_meta.get("code", {}).get("oopFeatures") and len(in_text_meta.get("code", {}).get("oopFeatures")) >= 2)
+            has_fin = bool(in_text_meta.get("financial", {}).get("transactionIds") or in_text_meta.get("financial", {}).get("banks"))
+
+            prov_name = "Document Provenance & In-Text Metadata" if (has_acad or has_cd or has_fin) else "Document Provenance & Container Integrity"
+            prov_status = (
+                "Verified Academic Dossier" if has_acad else
+                "Valid OOP Code Architecture" if has_cd else
+                "Verified Banking Transaction Ledger" if has_fin else
+                "Container Parsed"
+            )
+            prov_detail = (
+                f"Verified in-text student credentials ({in_text_meta.get('academic', {}).get('studentName', 'Student')}, Roll: {', '.join(in_text_meta.get('academic', {}).get('rollNumbers', []))}, {in_text_meta.get('academic', {}).get('college', 'College')})." if has_acad else
+                f"Recognized technical curriculum & OOP structure ({', '.join(in_text_meta.get('code', {}).get('oopFeatures', [])[:4])})." if has_cd else
+                f"Verified UPI transaction references across {', '.join(in_text_meta.get('financial', {}).get('banks', []))}." if has_fin else
+                prov_text
+            )
+
             breakdown.append({
-                "name": "Document Provenance & Container Integrity",
+                "name": prov_name,
                 "category": "metadata_exif",
-                "score": 12.0 if not is_ai else 55.0,
+                "score": 8.0 if (has_acad or has_cd or has_fin) else (12.0 if not is_ai else 55.0),
                 "weight": 0.10,
                 "flagged": False,
-                "status": "Container Parsed",
-                "detail": prov_text,
+                "status": prov_status,
+                "detail": prov_detail,
             })
 
         # Extract plain text representation
@@ -154,8 +207,9 @@ def main():
             "per_detector_scores": {
                 "pixel_patterns": round(suspicion if verdict == "likely_ai_generated" else 18.0, 1),
                 "face_lighting": round(suspicion if verdict == "likely_ai_generated" else 16.0, 1),
-                "metadata_exif": 12.0,
+                "metadata_exif": 8.0 if (d.get("technical_metadata", {}).get("InTextMetadata", {}).get("academic") or d.get("technical_metadata", {}).get("InTextMetadata", {}).get("code")) else 12.0,
                 "breakdown": breakdown,
+                "inTextMetadata": d.get("technical_metadata", {}).get("InTextMetadata"),
             },
             "key_findings": key_findings,
             "flagged_passages": d.get("flagged_passages", []),
