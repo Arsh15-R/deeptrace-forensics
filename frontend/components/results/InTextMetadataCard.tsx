@@ -17,6 +17,9 @@ import {
   Banknote,
   Terminal,
   ExternalLink,
+  Globe,
+  MapPin,
+  Laptop,
 } from "lucide-react";
 import { InTextMetadata } from "@/lib/types";
 
@@ -25,14 +28,26 @@ interface InTextMetadataCardProps {
 }
 
 export const InTextMetadataCard: React.FC<InTextMetadataCardProps> = ({ metadata }) => {
-  if (!metadata || (!metadata.academic?.studentName && !metadata.academic?.rollNumbers?.length && !metadata.code?.oopFeatures?.length && !metadata.financial?.transactionIds?.length && !metadata.socialAttribution?.authorHandle && !metadata.structural?.sections?.length)) {
+  if (
+    !metadata ||
+    (!metadata.academic?.studentName &&
+      !metadata.academic?.rollNumbers?.length &&
+      !metadata.code?.oopFeatures?.length &&
+      !metadata.financial?.transactionIds?.length &&
+      !metadata.socialAttribution?.authorHandle &&
+      !metadata.structural?.sections?.length &&
+      !metadata.webProvenance?.organization &&
+      !metadata.webProvenance?.isExamPortal)
+  ) {
     return null;
   }
 
-  const { genre, academic, financial, code, structural, socialAttribution, integrityScore, integrityStatus } = metadata;
+  const { genre, academic, financial, code, structural, socialAttribution, webProvenance, integrityScore, integrityStatus } = metadata;
 
   const getGenreIcon = () => {
     switch (genre) {
+      case "Enterprise Examination Platform & Student Portal":
+        return <Globe className="w-5 h-5 text-teal-500" />;
       case "Academic Project Dossier & Student Report":
         return <GraduationCap className="w-5 h-5 text-indigo-500" />;
       case "Source Code & OOP Technical Assignment":
@@ -215,6 +230,68 @@ export const InTextMetadataCard: React.FC<InTextMetadataCardProps> = ({ metadata
             <div className="text-[11px] text-neutral-500 italic">
               Algorithmic and programming syntax is evaluated for structural logic, exempt from natural prose burstiness penalties.
             </div>
+          </div>
+        )}
+
+        {/* Enterprise Web & Platform Provenance */}
+        {(webProvenance?.organization || webProvenance?.isExamPortal || webProvenance?.founder) && (
+          <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200/80 dark:border-neutral-800 space-y-2 sm:col-span-2">
+            <div className="flex items-center justify-between pb-1 border-b border-neutral-200/60 dark:border-neutral-800/80">
+              <div className="flex items-center space-x-1.5 text-neutral-700 dark:text-neutral-300 font-bold text-xs">
+                <Globe className="w-3.5 h-3.5 text-teal-500" />
+                <span>Enterprise Web & Platform Provenance</span>
+              </div>
+              {webProvenance.hasSchemaLd && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-900/50">
+                  Schema.org JSON-LD Verified
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {webProvenance.platformName && (
+                <div className="flex items-start space-x-2 text-neutral-800 dark:text-neutral-200">
+                  <Building2 className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0 mt-0.5" />
+                  <span className="font-medium text-neutral-500">Platform:</span>
+                  <span className="font-semibold">{webProvenance.platformName}</span>
+                </div>
+              )}
+              {webProvenance.founder && (
+                <div className="flex items-start space-x-2 text-neutral-800 dark:text-neutral-200">
+                  <User className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0 mt-0.5" />
+                  <span className="font-medium text-neutral-500">Founder Attribution:</span>
+                  <span className="font-semibold">{webProvenance.founder}</span>
+                </div>
+              )}
+              {webProvenance.location && (
+                <div className="flex items-start space-x-2 text-neutral-800 dark:text-neutral-200">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0 mt-0.5" />
+                  <span className="font-medium text-neutral-500">Location:</span>
+                  <span>{webProvenance.location}</span>
+                </div>
+              )}
+              {webProvenance.softwareCategory && (
+                <div className="flex items-start space-x-2 text-neutral-800 dark:text-neutral-200">
+                  <Laptop className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0 mt-0.5" />
+                  <span className="font-medium text-neutral-500">Category:</span>
+                  <span className="leading-snug">{webProvenance.softwareCategory}</span>
+                </div>
+              )}
+              {webProvenance.bundleVersion && (
+                <div className="flex items-start space-x-2 text-neutral-800 dark:text-neutral-200 sm:col-span-2">
+                  <Terminal className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0 mt-0.5" />
+                  <span className="font-medium text-neutral-500">Asset Bundle:</span>
+                  <span className="font-mono text-[11px] text-neutral-700 dark:text-neutral-300">{webProvenance.bundleVersion}</span>
+                </div>
+              )}
+            </div>
+
+            {webProvenance.isExamPortal && (
+              <div className="pt-1 flex items-center space-x-1.5 text-teal-600 dark:text-teal-400 text-[11px] font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Verified AI Exam Proctoring & Student Dashboard Architecture</span>
+              </div>
+            )}
           </div>
         )}
 

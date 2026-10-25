@@ -1,4 +1,6 @@
-# Environment variables & secrets (CRITICAL)
+# Scratch / temp working directory
+scratch/
+
 .env
 .env.*
 !.env.example

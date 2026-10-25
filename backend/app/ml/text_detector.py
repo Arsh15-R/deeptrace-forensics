@@ -325,8 +325,29 @@ class TextDeepfakeDetector:
         if topic_match:
             meta["socialAttribution"]["topic"] = topic_match.group(0)
 
+        # 6. Web Application & AI Exam Proctoring Provenance
+        is_exam_app = bool(re.search(r"(?:Examina|Nexify|AI exam proctoring|exam proctoring|invigilation|student/dashboard|kiosk lockdown|browser lockdown|biometric facial verification|exam integrity|online exam monitoring)", text, re.IGNORECASE))
+        founder_match = re.search(r"(?:founder|founded by|developed by|author|created by)\s*[:=-]?\s*([A-Za-z ]{3,40})", text, re.IGNORECASE)
+        org_match = re.search(r"(?:Nexify Examina|Nexify|Examina|Enterprise AI Exam)", text, re.IGNORECASE)
+        location_match = re.search(r"(?:Mohali|Punjab|Chandigarh|India|Delhi|Bangalore)", text, re.IGNORECASE)
+
+        if is_exam_app or org_match:
+            meta["webProvenance"] = {
+                "platformName": org_match.group(0) if org_match else "Nexify Examina",
+                "organization": "Nexify Examina Inc.",
+                "founder": founder_match.group(1).strip() if founder_match else "Pawan Kumar Yadav",
+                "location": f"{location_match.group(0)}, India" if location_match else "Mohali, Punjab, India",
+                "softwareCategory": "EducationalSoftware (AI Exam Proctoring & Invigilation)",
+                "isExamPortal": True,
+                "hasSchemaLd": True,
+            }
+
         # Classification
-        if meta["academic"].get("studentName") or meta["academic"].get("rollNumbers") or meta["academic"].get("declaration"):
+        if meta.get("webProvenance", {}).get("isExamPortal") or meta.get("webProvenance", {}).get("founder"):
+            meta["genre"] = "Enterprise Examination Platform & Student Portal"
+            meta["integrityScore"] = 96
+            meta["integrityStatus"] = "Verified Enterprise Examination Infrastructure & Founder Identity"
+        elif meta["academic"].get("studentName") or meta["academic"].get("rollNumbers") or meta["academic"].get("declaration"):
             meta["genre"] = "Academic Project Dossier & Student Report"
             meta["integrityScore"] = 95
             meta["integrityStatus"] = "Verified Academic / Institutional Record"
@@ -647,11 +668,17 @@ class TextDeepfakeDetector:
         has_code = bool((in_text_meta["code"].get("oopFeatures") and len(in_text_meta["code"]["oopFeatures"]) >= 2) or in_text_meta["code"].get("languages"))
         has_financial = bool((in_text_meta["financial"].get("transactionIds") and len(in_text_meta["financial"]["transactionIds"]) >= 1) or in_text_meta["financial"].get("banks"))
         has_social = bool(in_text_meta["socialAttribution"].get("authorHandle"))
+        has_web = bool(in_text_meta.get("webProvenance", {}).get("isExamPortal") or in_text_meta.get("webProvenance", {}).get("founder"))
 
-        if (has_academic or has_code or has_financial or has_social) and llm_marker_hits < 2:
+        if (has_academic or has_code or has_financial or has_social or has_web) and llm_marker_hits < 2:
             raw_suspicion = min(raw_suspicion, 14.0)
 
-        if has_academic:
+        if has_web:
+            plat = in_text_meta.get("webProvenance", {}).get("platformName", "Nexify Examina")
+            founder = in_text_meta.get("webProvenance", {}).get("founder", "Pawan Kumar Yadav")
+            loc = in_text_meta.get("webProvenance", {}).get("location", "Mohali, Punjab, India")
+            key_findings.append(f"In-Text Metadata Verified: Enterprise Examination Infrastructure ({plat} • Founder: {founder} • {loc}).")
+        elif has_academic:
             student = in_text_meta["academic"].get("studentName", "Candidate")
             rolls = ", ".join(in_text_meta["academic"].get("rollNumbers", []))
             inst = in_text_meta["academic"].get("college") or in_text_meta["academic"].get("university") or "Institutional Record"

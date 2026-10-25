@@ -326,7 +326,9 @@ export function generateForensicPdfBuffer(caseData: CaseRecord): Uint8Array {
   // Row 4: In-Text Provenance / Document Stylometrics
   const inTextMeta = (pds as any).inTextMetadata || (pds as any).in_text_metadata;
   const inTextGenre = inTextMeta?.genre || (caseData.media_type === "text" ? "Stylometric Lexicon" : "Cross-Modal Correlation");
-  const inTextStatus = inTextMeta?.hasAcademicDossier
+  const inTextStatus = inTextMeta?.webProvenance?.isExamPortal
+    ? "Verified Enterprise Examination Infrastructure & Founder Identity"
+    : inTextMeta?.hasAcademicDossier
     ? "Verified Academic Dossier & Student Identity"
     : inTextMeta?.hasCodeArchitecture
     ? "Verified OOP Architecture & Programming Syntax"

@@ -41,6 +41,19 @@ export interface InTextMetadata {
     authorHandle?: string;
     topic?: string;
   };
+  webProvenance?: {
+    platformName?: string;
+    organization?: string;
+    founder?: string;
+    location?: string;
+    softwareCategory?: string;
+    targetAudience?: string;
+    isExamPortal?: boolean;
+    hasSchemaLd?: boolean;
+    pageTitle?: string;
+    author?: string;
+    bundleVersion?: string;
+  };
   integrityScore?: number;
   integrityStatus?: string;
 }
