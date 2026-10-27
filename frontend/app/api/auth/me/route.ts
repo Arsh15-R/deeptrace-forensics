@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       query = query.eq("email", userEmail);
     }
 
-    const { data: profile } = await query.maybeSingle();
+    let profile = (await query.maybeSingle()).data;
 
     const isAdmin =
       userEmail?.toLowerCase() === "arshrana2468@gmail.com" ||
@@ -42,6 +42,32 @@ export async function GET(req: NextRequest) {
       role = "admin";
     } else if (profile?.role?.toLowerCase() === "officer") {
       role = "officer";
+    }
+
+    if (!profile && userEmail) {
+      try {
+        const newRecord = {
+          id: userId || "0b885f91-6a4a-4472-80da-2e26c3c89adc",
+          email: userEmail,
+          full_name: userEmail.split("@")[0],
+          badge_number: isAdmin ? "GOOG-ADMIN" : `OFF-${(userId || "USER").slice(0, 4).toUpperCase()}`,
+          department: isAdmin ? "Department Administration" : "Cyber Forensics & Evidence Unit",
+          role,
+          is_active: true,
+          provider: "google",
+          updated_at: new Date().toISOString(),
+        };
+        const { data: inserted } = await supabaseServer
+          .from("profiles")
+          .upsert(newRecord, { onConflict: "id" })
+          .select("*")
+          .maybeSingle();
+        if (inserted) {
+          profile = inserted;
+        }
+      } catch (upsertErr) {
+        console.warn("Failed to auto-provision profile in /api/auth/me:", upsertErr);
+      }
     }
 
     return NextResponse.json({

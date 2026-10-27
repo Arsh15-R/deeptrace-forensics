@@ -14,6 +14,9 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         autoRefreshToken: true,
         detectSessionInUrl: true,
       },
+      realtime: {
+        transport: typeof WebSocket !== "undefined" ? WebSocket : (class DummyWS {} as any),
+      },
     })
   : null;
 
@@ -40,15 +43,67 @@ async function fetchServerProfile(token: string): Promise<OfficerProfile> {
               ? "officer"
               : "viewer";
 
+          // If avatar or full_name became available from Google OAuth, update in background
+          const googleAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+          const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
+          if ((googleAvatar && !profile.avatar_url) || (googleName && !profile.full_name)) {
+            Promise.resolve(
+              supabase
+                .from("profiles")
+                .update({
+                  avatar_url: profile.avatar_url || googleAvatar || null,
+                  full_name: profile.full_name || googleName || "Authorized Personnel",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", profile.id)
+            ).catch(() => {});
+          }
+
           return {
             id: profile.id,
             email: profile.email,
-            full_name: profile.full_name || user.user_metadata?.full_name || "Authorized Personnel",
+            full_name: profile.full_name || googleName || "Authorized Personnel",
             badge_number: profile.badge_number || `GOOG-${profile.id.slice(0, 4).toUpperCase()}`,
             department: profile.department || "Cyber Forensics & Evidence Unit",
             role,
-            avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
+            avatar_url: profile.avatar_url || googleAvatar || null,
             provider: profile.provider || "google",
+          };
+        } else {
+          // If profile does not exist yet, auto-provision profile record
+          const isAdmin = user.email?.toLowerCase() === "arshrana2468@gmail.com";
+          const newProfile = {
+            id: user.id,
+            email: user.email,
+            full_name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              (user.email ? user.email.split("@")[0] : "Authorized Personnel"),
+            badge_number: isAdmin ? "GOOG-ADMIN" : `GOOG-${user.id.slice(0, 4).toUpperCase()}`,
+            department: isAdmin ? "Department Administration" : "Cyber Forensics & Evidence Unit",
+            role: isAdmin ? "admin" : "officer",
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            is_active: true,
+            provider: "google",
+            updated_at: new Date().toISOString(),
+          };
+
+          const { data: createdProfile } = await supabase
+            .from("profiles")
+            .upsert(newProfile, { onConflict: "id" })
+            .select()
+            .maybeSingle();
+
+          const active = createdProfile || newProfile;
+          return {
+            id: active.id,
+            email: active.email,
+            full_name: active.full_name,
+            badge_number: active.badge_number,
+            department: active.department,
+            role: (active.role as any) || (isAdmin ? "admin" : "officer"),
+            avatar_url: active.avatar_url || null,
+            provider: "google",
           };
         }
       }

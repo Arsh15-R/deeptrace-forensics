@@ -14,6 +14,7 @@ export async function GET() {
   try {
     const qtRes = await fetch("http://127.0.0.1:20241/quicktunnel", {
       signal: AbortSignal.timeout(600),
+      cache: "no-store",
     });
     if (qtRes.ok) {
       const qtData = await qtRes.json();
