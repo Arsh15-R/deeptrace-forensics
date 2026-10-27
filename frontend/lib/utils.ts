@@ -103,7 +103,7 @@ export function apiUrl(path: string): string {
 
   // Priority 3: Fallback for Vercel production to active Cloudflare Tunnel
   if (!base && typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
-    base = "https://spend-ser-anaheim-modems.trycloudflare.com";
+    base = "https://cash-relationship-correspondence-atom.trycloudflare.com";
   }
 
   if (!base) return path.startsWith("/") ? path : `/${path}`;

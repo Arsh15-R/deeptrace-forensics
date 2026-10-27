@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "https://red-frost-licenses-canal.trycloudflare.com",
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "https://cash-relationship-correspondence-atom.trycloudflare.com",
   },
   images: {
     remotePatterns: [

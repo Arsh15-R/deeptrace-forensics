@@ -33,25 +33,45 @@ export async function checkServerHealth(signal?: AbortSignal): Promise<{ ok: boo
   // Step 2: Auto-discovery fallback if running on Vercel
   if (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
     try {
-      const discoRes = await fetch("/api/tunnel-status", { method: "GET" });
-      if (discoRes.ok) {
-        const discoData = await discoRes.json();
-        const activeTunnel = discoData?.tunnel_url?.trim();
-        if (activeTunnel && !endpoint.startsWith(activeTunnel)) {
-          const retryEndpoint = `${activeTunnel.replace(/\/+$/, "")}/api/health`;
-          const controller2 = new AbortController();
-          const timeoutId2 = setTimeout(() => controller2.abort(), 4000);
-          const retryRes = await fetch(retryEndpoint, {
-            method: "GET",
-            signal: controller2.signal,
-          }).finally(() => clearTimeout(timeoutId2));
+      let activeTunnel: string | null = null;
 
-          if (retryRes.ok) {
-            localStorage.setItem("deeptrace_api_url", activeTunnel);
-            (window as any).__DEEPTRACE_DISCOVERED_TUNNEL__ = activeTunnel;
-            console.log(`[DeepTrace Client] Auto-discovered active laptop tunnel: ${activeTunnel}`);
-            return { ok: true };
+      try {
+        const discoRes = await fetch("/api/tunnel-status", { method: "GET" });
+        if (discoRes.ok) {
+          const discoData = await discoRes.json();
+          activeTunnel = discoData?.tunnel_url?.trim() || null;
+        }
+      } catch {}
+
+      // Fallback: direct query to Supabase Realtime Database (audit_logs heartbeat)
+      if (!activeTunnel && supabase) {
+        try {
+          const { data: logs } = await supabase
+            .from("audit_logs")
+            .select("details, created_at")
+            .in("action", ["tunnel_heartbeat", "TUNNEL_HEARTBEAT"])
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (logs && logs[0]?.details?.tunnel_url) {
+            activeTunnel = logs[0].details.tunnel_url.trim();
           }
+        } catch {}
+      }
+
+      if (activeTunnel && !endpoint.startsWith(activeTunnel)) {
+        const retryEndpoint = `${activeTunnel.replace(/\/+$/, "")}/api/health`;
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 4000);
+        const retryRes = await fetch(retryEndpoint, {
+          method: "GET",
+          signal: controller2.signal,
+        }).finally(() => clearTimeout(timeoutId2));
+
+        if (retryRes.ok) {
+          localStorage.setItem("deeptrace_api_url", activeTunnel);
+          (window as any).__DEEPTRACE_DISCOVERED_TUNNEL__ = activeTunnel;
+          console.log(`[DeepTrace Client] Auto-discovered active laptop tunnel: ${activeTunnel}`);
+          return { ok: true };
         }
       }
     } catch {}
