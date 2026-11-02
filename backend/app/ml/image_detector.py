@@ -6,8 +6,12 @@ import numpy as np
 from PIL import Image
 import cv2
 import scipy.fft
-import torch
-import torchvision.transforms as transforms
+try:
+    import torch
+    import torchvision.transforms as transforms
+except Exception:
+    torch = None
+    transforms = None
 
 from app.ml.common import (
     StandardizedAnalysisResult,
@@ -48,11 +52,14 @@ class ImageDeepfakeDetector:
             self._classifier = None
             self.has_trained_weights = False
 
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+        if transforms is not None:
+            self.transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            self.transform = None
 
         # Load AI icon template for platform provenance tag detection
         icon_path = self.assets_dir / "instagram_ai_icon.png"
@@ -177,11 +184,58 @@ class ImageDeepfakeDetector:
         pure_white_ratio = float(np.mean((img_np[:, :, 0] >= 252) & (img_np[:, :, 1] >= 252) & (img_np[:, :, 2] >= 252)))
         mean_sat_full = float(np.mean(sat_full))
 
+        # 1. Early Bayer CFA Cross-Channel Noise Correlation
+        b_ch, g_ch, r_ch = cv2.split(img_bgr)
+        hp_r = r_ch.astype(np.float32) - cv2.GaussianBlur(r_ch.astype(np.float32), (5, 5), 1.0)
+        hp_g = g_ch.astype(np.float32) - cv2.GaussianBlur(g_ch.astype(np.float32), (5, 5), 1.0)
+        hp_b = b_ch.astype(np.float32) - cv2.GaussianBlur(b_ch.astype(np.float32), (5, 5), 1.0)
+
+        std_r = float(np.std(hp_r))
+        std_g = float(np.std(hp_g))
+        std_b = float(np.std(hp_b))
+
+        if std_r > 1e-4 and std_g > 1e-4 and std_b > 1e-4:
+            corr_rg = float(np.corrcoef(hp_r.flatten(), hp_g.flatten())[0, 1])
+            corr_rb = float(np.corrcoef(hp_r.flatten(), hp_b.flatten())[0, 1])
+            corr_gb = float(np.corrcoef(hp_g.flatten(), hp_b.flatten())[0, 1])
+            mean_cfa_corr = float((corr_rg + corr_rb + corr_gb) / 3.0)
+        else:
+            mean_cfa_corr = 0.50
+
+        # 2. Early Physical sensor noise residual & kurtosis (PRNU Signature)
+        denoised = cv2.medianBlur(gray, 3)
+        noise_residual = (gray.astype(np.float32) - denoised.astype(np.float32)).ravel()
+        p_low, p_high = np.percentile(noise_residual, [0.5, 99.5])
+        trimmed_res = noise_residual[(noise_residual >= p_low) & (noise_residual <= p_high)]
+        res_mean = float(np.mean(trimmed_res))
+        res_var = float(np.var(trimmed_res) + 1e-6)
+        median_kurt = float(np.mean((trimmed_res - res_mean)**4) / (res_var**2))
+
+        lap = cv2.Laplacian(gray, cv2.CV_32F)
+        lap_mean = float(np.mean(lap))
+        lap_var = float(np.var(lap) + 1e-6)
+        lap_kurt = float(np.mean((lap - lap_mean)**4) / (lap_var**2))
+        noise_kurt = max(median_kurt, lap_kurt)
+
+        # 3. Text stroke contour analysis: true documents/slides feature dense, stroke-sized contours
+        _, doc_bin = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        doc_contours, _ = cv2.findContours(doc_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        text_stroke_count = sum(
+            1 for c in doc_contours
+            if 15 < cv2.contourArea(c) < 5000 and 3 < cv2.boundingRect(c)[2] < 250 and 3 < cv2.boundingRect(c)[3] < 120
+        )
+        has_text_stroke_contours = (text_stroke_count >= 15)
+
+        # Generative diffusion veto: high VAE latent correlation or heavy-tailed noise kurtosis
+        is_synthetic_diffusion = (mean_cfa_corr > 0.95 or noise_kurt > 20.0)
+
         is_doc_or_slide = (
             pure_white_ratio < 0.08 and
             mean_sat_full < 30.0 and
             white_paper_ratio > 0.62 and
-            sharp_ratio > 0.025
+            sharp_ratio > 0.025 and
+            has_text_stroke_contours and
+            not is_synthetic_diffusion
         )
         is_presentation_slide = is_doc_or_slide and (aspect > 1.55)
         is_physical_document = is_doc_or_slide and (aspect <= 1.55)
@@ -320,15 +374,6 @@ class ImageDeepfakeDetector:
             technical_metadata["TextureDisparityIndex"] = round(disparity_index, 4)
 
             # 1. Physical sensor noise residual & kurtosis (PRNU Signature)
-            denoised = cv2.medianBlur(gray, 3)
-            noise_residual = (gray.astype(np.float32) - denoised.astype(np.float32)).ravel()
-
-            p_low, p_high = np.percentile(noise_residual, [0.5, 99.5])
-            trimmed_res = noise_residual[(noise_residual >= p_low) & (noise_residual <= p_high)]
-            res_mean = float(np.mean(trimmed_res))
-            res_var = float(np.var(trimmed_res) + 1e-6)
-            noise_kurt = float(np.mean((trimmed_res - res_mean)**4) / (res_var**2))
-
             technical_metadata["NoiseResidualKurtosis"] = round(noise_kurt, 2)
             technical_metadata["NoiseResidualVariance"] = round(float(res_var), 3)
 
@@ -355,22 +400,6 @@ class ImageDeepfakeDetector:
                 alpha_slope = 2.0
 
             # 3. Bayer CFA Cross-Channel Noise Correlation
-            b_ch, g_ch, r_ch = cv2.split(img_bgr)
-            hp_r = r_ch.astype(np.float32) - cv2.GaussianBlur(r_ch.astype(np.float32), (5, 5), 1.0)
-            hp_g = g_ch.astype(np.float32) - cv2.GaussianBlur(g_ch.astype(np.float32), (5, 5), 1.0)
-            hp_b = b_ch.astype(np.float32) - cv2.GaussianBlur(b_ch.astype(np.float32), (5, 5), 1.0)
-
-            std_r = float(np.std(hp_r))
-            std_g = float(np.std(hp_g))
-            std_b = float(np.std(hp_b))
-
-            if std_r > 1e-4 and std_g > 1e-4 and std_b > 1e-4:
-                corr_rg = float(np.corrcoef(hp_r.flatten(), hp_g.flatten())[0, 1])
-                corr_rb = float(np.corrcoef(hp_r.flatten(), hp_b.flatten())[0, 1])
-                corr_gb = float(np.corrcoef(hp_g.flatten(), hp_b.flatten())[0, 1])
-                mean_cfa_corr = float((corr_rg + corr_rb + corr_gb) / 3.0)
-            else:
-                mean_cfa_corr = 0.50
             technical_metadata["ColorChannelHighPassCorrelation"] = round(mean_cfa_corr, 4)
 
             # 4. 2D DCT Macroblock Analysis
@@ -385,13 +414,13 @@ class ImageDeepfakeDetector:
             technical_metadata["HighFreqResidualRatio"] = round(hf_ratio, 4)
 
             # Sensor scoring
-            if noise_kurt > 38.0:
-                noise_score = min(98.0, 75.0 + (noise_kurt - 38.0) * 1.5)
+            if noise_kurt > 26.0:
+                noise_score = min(98.0, 75.0 + (noise_kurt - 26.0) * 2.0)
                 key_findings.append(
                     f"Physical sensor noise residual kurtosis ({noise_kurt:.1f}) severely deviates from natural camera Gaussian limits, confirming iterative latent diffusion denoising."
                 )
-            elif noise_kurt > 26.0:
-                noise_score = 38.0 + (noise_kurt - 26.0) * 2.0
+            elif noise_kurt > 18.0:
+                noise_score = 38.0 + (noise_kurt - 18.0) * 2.0
                 key_findings.append(
                     f"Elevated noise residual kurtosis ({noise_kurt:.1f}) suggests non-optical synthetic denoising or heavy filtering."
                 )
@@ -548,7 +577,8 @@ class ImageDeepfakeDetector:
                 cfa_score >= 70.0,
                 spectral_score >= 60.0,
                 texture_score >= 60.0,
-                face_composite >= 65.0
+                face_composite >= 65.0,
+                neural_score >= 70.0
             ])
             if confluent_signals >= 3:
                 raw_suspicion = min(95.0, max(raw_suspicion, 88.0 + (confluent_signals - 3) * 3.5))
@@ -560,7 +590,7 @@ class ImageDeepfakeDetector:
                 conf = 84.0
 
             # Authentic Camera Safeguard
-            cfa_natural = (mean_cfa_corr < 0.972)
+            cfa_natural = (mean_cfa_corr < 0.983)
             if noise_kurt <= 26.0 and hf_ratio < 0.055 and cfa_natural and 1.3 <= alpha_slope <= 3.3:
                 if has_camera_hardware_tag:
                     raw_suspicion = min(raw_suspicion, 14.0)

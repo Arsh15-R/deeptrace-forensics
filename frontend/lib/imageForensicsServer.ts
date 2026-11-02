@@ -415,7 +415,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   // Case 2: Physical Document & Printed Paper Capture (Documents, Contracts, Certificates, Lab Rules)
   else if (isPhysicalDocument) {
     verdict = "likely_authentic";
-    confidence = hasCameraMake ? 7.5 : hasExif ? 9.5 : 12.0;
+    confidence = hasCameraMake ? 94.0 : hasExif ? 92.0 : 89.5;
     pixelScore = 11.0;
     lightingScore = 14.0;
     metadataScore = hasCameraMake ? 6.0 : hasExif ? 10.0 : 15.0;
@@ -521,7 +521,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   // Case 4: Digital UI Screen Capture / Screenshot
   else if (isScreenshot) {
     verdict = "likely_authentic";
-    confidence = 15.0; // Low synthetic risk index
+    confidence = 90.0;
     pixelScore = 14.0;
     lightingScore = 15.0;
     metadataScore = 12.0;
@@ -550,7 +550,7 @@ export function analyzeImageForensics(buf: Buffer, filename: string): ImageForen
   // Case 5: Authentic Physical Camera Optical Capture
   else {
     verdict = "likely_authentic";
-    confidence = hasCameraMake ? 8.5 : hasExif ? 12.0 : 16.0;
+    confidence = hasCameraMake ? 94.5 : hasExif ? 92.0 : 88.5;
     pixelScore = 14.5;
     lightingScore = 18.0;
 

@@ -226,10 +226,13 @@ class AudioDeepfakeDetector:
         # De-conflict vocoder peak from speaker's fundamental pitch (F0) and harmonics
         pitch_conflict = False
         if mean_f0 > 0:
+            f0_tol = max(18.0, 1.6 * std_f0) if std_f0 > 15.0 else 18.0
+            sub_f0_tol = max(12.0, 0.8 * std_f0) if std_f0 > 15.0 else 12.0
+            harm_f0_tol = max(20.0, 1.6 * std_f0) if std_f0 > 15.0 else 20.0
             if (
-                abs(vocoder_peak_freq - mean_f0) < 18.0 or 
-                abs(vocoder_peak_freq - (mean_f0 / 2)) < 12.0 or 
-                abs(vocoder_peak_freq - (mean_f0 * 2)) < 20.0
+                abs(vocoder_peak_freq - mean_f0) < f0_tol or 
+                abs(vocoder_peak_freq - (mean_f0 / 2)) < sub_f0_tol or 
+                abs(vocoder_peak_freq - (mean_f0 * 2)) < harm_f0_tol
             ):
                 pitch_conflict = True
 
@@ -289,8 +292,8 @@ class AudioDeepfakeDetector:
                 "Continuous high-frequency acoustic air dispersion above 15 kHz consistent with physical studio microphone capture."
             )
 
-        # Mitigating natural human prosody & breathing biomechanics only in valid human range (0.5% - 3.2% jitter) without vocoder spikes
-        if std_f0 > 18.0 and 0.5 <= jitter_pct <= 3.2 and vocoder_hop_pts == 0 and silence_suspicion_pts == 0:
+        # Mitigating natural human prosody & breathing biomechanics only in valid human range (0.5% - 4.0% jitter) without vocoder spikes
+        if std_f0 > 18.0 and 0.5 <= jitter_pct <= 4.0 and vocoder_hop_pts == 0 and silence_suspicion_pts == 0:
             total_evidence_score -= 22.0
             key_findings.append(
                 f"Natural vocal cord biomechanics verified: organic dynamic inflection (F0 std dev: {std_f0:.1f} Hz) and human glottal jitter ({jitter_pct:.2f}%)."

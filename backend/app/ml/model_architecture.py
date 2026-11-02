@@ -1,8 +1,17 @@
-import torch
-import torch.nn as nn
-import torchvision.models as models
+from __future__ import annotations
 
-class DeepfakeClassifier(nn.Module):
+try:
+    import torch
+    import torch.nn as nn
+    import torchvision.models as models
+    _ModuleBase = nn.Module
+except Exception:
+    torch = None
+    nn = None
+    models = None
+    _ModuleBase = object
+
+class DeepfakeClassifier(_ModuleBase):
     """
     Deep learning classifier for detecting Real (Authentic) vs. Synthetic (AI-Generated / Deepfake) images.
     Uses MobileNetV3-Small backbone with a custom binary classification head.

@@ -185,7 +185,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     } else {
       // Authentic camera video verified
       verdict = "likely_authentic";
-      confidence = 16.5; // Low synthetic risk index
+      confidence = 88.5; // High confidence authentic verdict
       temporalScore = 15.0;
       pixelScore = 14.0;
       lightingScore = 16.0;

@@ -1,12 +1,16 @@
-import torch
+try:
+    import torch
+    def get_torch_device():
+        """Returns CUDA device if GPU available, otherwise CPU."""
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        return torch.device("cpu")
+except Exception:
+    torch = None
+    def get_torch_device():
+        return "cpu"
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
-
-def get_torch_device() -> torch.device:
-    """Returns CUDA device if GPU available, otherwise CPU."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
 
 class SuspiciousRegion(BaseModel):
     id: str

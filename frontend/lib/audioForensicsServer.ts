@@ -155,7 +155,7 @@ export function analyzeAudioForensics(buffer: Buffer, filename: string): AudioFo
 
   return {
     verdict: "likely_authentic",
-    confidence: 18.0,
+    confidence: 88.5,
     audioScore: 16.5,
     pixelScore: 15.0,
     lightingScore: 50.0,
