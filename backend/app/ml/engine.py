@@ -10,6 +10,7 @@ from app.ml.image_detector import ImageDeepfakeDetector
 from app.ml.video_detector import VideoDeepfakeDetector
 from app.ml.audio_detector import AudioDeepfakeDetector
 from app.ml.text_detector import TextDeepfakeDetector
+from app.ml.website_detector import WebsiteDeepfakeDetector
 from app.db.supabase_client import supabase_vault
 from app.db.database import save_case
 from app.db.models import CaseRecord, PerDetectorScores, DetectorBreakdown, VideoFrameAnalysis
@@ -28,6 +29,7 @@ class MultimodalForensicEngine:
         self.video_detector = VideoDeepfakeDetector()
         self.audio_detector = AudioDeepfakeDetector()
         self.text_detector = TextDeepfakeDetector()
+        self.website_detector = WebsiteDeepfakeDetector()
         
         # In-memory job registry for asynchronous polling
         self.jobs: Dict[str, Dict[str, Any]] = {}

@@ -265,7 +265,7 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases, onRef
                             className="font-medium text-neutral-800 dark:text-neutral-200 truncate"
                             title={item.file_name || item.source_url || "Statement"}
                           >
-                            {item.file_name || (item.source_url ? "Remote URL" : "Statement")}
+                            {item.file_name || (item.source_url ? (item.media_type === "website" ? "Website Inspection" : "Web URL") : "Statement")}
                           </div>
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono">
                             {item.media_type}

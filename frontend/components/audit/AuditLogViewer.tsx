@@ -29,7 +29,7 @@ function summarizeAuditDetails(action: string, details?: Record<string, any> | s
     case "MEDIA_UPLOAD":
     case "EVIDENCE_UPLOADED": {
       if (d.file_name) return `Ingested ${d.file_name}`;
-      if (d.source_url) return `Ingested from remote URL`;
+      if (d.source_url) return d.media_type === "website" ? `Inspected website URL` : `Ingested web source URL`;
       if (d.media_type) return `Ingested ${d.media_type} asset`;
       break;
     }

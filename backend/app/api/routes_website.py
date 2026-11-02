@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from app.config import settings
 from app.db.database import save_case, save_audit_log
 from app.db.models import CaseRecord, AuditLogRecord, WebsiteAnalysisRequest, PerDetectorScores, DetectorBreakdown
+from app.ml.engine import forensic_engine
 from app.utils.auth import require_officer, CurrentUser
-from app.utils.security import calculate_sha256, validate_outbound_url, generate_case_number
+from app.utils.security import calculate_sha256, validate_outbound_url
+from app.api.routes_cases import generate_case_number
 
 logger = logging.getLogger("deeptrace")
 router = APIRouter(prefix="/website", tags=["Website Analysis"])
@@ -361,6 +363,23 @@ async def analyze_website_endpoint(
     ai_builder = detect_ai_website_builder(html_content, final_headers, final_url)
     security = inspect_website_security(final_url, final_headers)
 
+    # 4-Part Multimodal Model Inference
+    ml_eval = forensic_engine.website_detector.analyze_website(
+        html_content,
+        dict(final_headers),
+        final_url,
+        {"hasRobotsTxt": False, "hasSitemapXml": False}
+    )
+
+    # Enrich AI builder findings with 3-class classification
+    ai_builder["predictedClass"] = ml_eval["predictedClass"]
+    ai_builder["classificationLabel"] = ml_eval["classificationLabel"]
+    ai_builder["calibratedConfidence"] = ml_eval["calibratedConfidence"]
+    ai_builder["breakdown"] = ml_eval["breakdown"]
+    ai_builder["metrics"] = ml_eval["metrics"]
+    ai_builder["explanation"] = ml_eval["explanation"]
+    ai_builder["probabilities"] = ml_eval["probabilities"]
+
     # Metadata
     title_match = re.search(r'<title[^>]*>([^<]+)</title>', html_content, re.I)
     page_title = title_match.group(1).strip() if title_match else domain
@@ -369,17 +388,25 @@ async def analyze_website_endpoint(
     meta_desc = desc_match.group(1).strip() if desc_match else ""
 
     technical_findings = [
+        f"Multimodal Classification: {ml_eval['classificationLabel']} ({ml_eval['calibratedConfidence']}% calibrated confidence).",
+        f"Analytical Breakdown: Code {ml_eval['breakdown']['codeAnalysisScore']}%, Visual {ml_eval['breakdown']['visualAnalysisScore']}%, Fingerprints {ml_eval['breakdown']['fingerprintScore']}%.",
         f"Host {domain} resolved securely with HTTP {status_code} response.",
         f"Transport Security: {security['protocol']} (Grade: {security['grade']}, Score: {security['securityScore']}/100).",
         f"Identified frontend framework: {tech['frontendFramework'] or 'Standard Web Standards'} ({len(tech['detectedTechnologies'])} libraries identified).",
         f"Content Management System: {tech['cms'] or 'Bespoke custom architecture'}.",
         f"Edge & Cloud Hosting: {tech['hostingCdn'] or 'Direct origin server'}.",
-        f"AI Builder Status: {ai_builder['builderName'] or 'Bespoke Human Development'} ({ai_builder['confidence']}% confidence).",
         f"SHA-256 fingerprint computed across {html_size_bytes} bytes: {sha256[:16]}...",
     ]
 
-    verdict = "likely_ai_generated" if ai_builder["isAiGenerated"] else "likely_authentic"
-    confidence = ai_builder["confidence"] if ai_builder["isAiGenerated"] else 94.5
+    if ml_eval["predictedClass"] == "ai_generated":
+        verdict = "likely_ai_generated"
+        confidence = ml_eval["calibratedConfidence"]
+    elif ml_eval["predictedClass"] == "ai_assisted":
+        verdict = "likely_ai_generated"
+        confidence = ml_eval["calibratedConfidence"]
+    else:
+        verdict = "likely_authentic"
+        confidence = ml_eval["calibratedConfidence"]
 
     website_analysis_dict = {
         "url": req.url,
@@ -424,40 +451,40 @@ async def analyze_website_endpoint(
 
     breakdown = [
         DetectorBreakdown(
-            name="Domain Infrastructure & Edge CDN Routing",
-            category="metadata_exif",
-            score=9.0 if tech["hostingCdn"] else 25.0,
-            weight=0.25,
-            flagged=False,
-            status=tech["hostingCdn"] or "Origin Direct",
-            detail=f"Domain {domain} routed via {tech['hostingCdn'] or 'origin server'}."
-        ),
-        DetectorBreakdown(
-            name="Frontend & Application Framework Architecture",
+            name="Code & DOM Structure Analysis",
             category="pixel_patterns",
-            score=12.0 if tech["frontendFramework"] else 20.0,
-            weight=0.25,
-            flagged=False,
-            status=tech["frontendFramework"] or "Server Rendered",
-            detail=f"Detected {tech['frontendFramework'] or 'Vanilla HTML'} with {len(tech['detectedTechnologies'])} libraries."
+            score=float(ml_eval["breakdown"]["codeAnalysisScore"]),
+            weight=0.35,
+            flagged=ml_eval["breakdown"]["codeAnalysisScore"] > 60.0,
+            status=f"AI Code Index: {ml_eval['breakdown']['codeAnalysisScore']}%",
+            detail=f"Analyzed DOM depth (norm: {ml_eval['metrics']['domDepthNorm']}), div ratio ({ml_eval['metrics']['divToSemanticRatio']}), and class token entropy ({ml_eval['metrics']['classEntropy']})."
         ),
         DetectorBreakdown(
-            name="AI Website Builder Fingerprint Detection",
+            name="Visual & Layout Consistency Analysis",
             category="face_lighting",
-            score=88.0 if ai_builder["isAiGenerated"] else 6.0,
+            score=float(ml_eval["breakdown"]["visualAnalysisScore"]),
             weight=0.30,
-            flagged=ai_builder["isAiGenerated"],
-            status=f"Synthetic Builder: {ai_builder['builderName']}" if ai_builder["isAiGenerated"] else "Bespoke Human Development",
-            detail="; ".join(ai_builder["indicators"])
+            flagged=ml_eval["breakdown"]["visualAnalysisScore"] > 60.0,
+            status=f"Visual Symmetry: {ml_eval['breakdown']['visualAnalysisScore']}%",
+            detail=f"Evaluated spacing rhythm consistency ({ml_eval['metrics']['spacingRhythm']}), component repetition ({ml_eval['metrics']['cardRepetition']}), and responsive layout predictability."
+        ),
+        DetectorBreakdown(
+            name="Website Fingerprint & Asset Provenance",
+            category="metadata_exif",
+            score=float(ml_eval["breakdown"]["fingerprintScore"]),
+            weight=0.25,
+            flagged=ml_eval["breakdown"]["fingerprintScore"] > 60.0,
+            status=f"Fingerprint Score: {ml_eval['breakdown']['fingerprintScore']}%",
+            detail="; ".join(ai_builder["indicators"]) if ai_builder["indicators"] else f"Hosting: {tech['hostingCdn'] or 'Origin'}, CMS: {tech['cms'] or 'Bespoke'}."
         ),
         DetectorBreakdown(
             name="HTTP Transport Security & Header Hardening",
             category="metadata_exif",
             score=float(100 - security["securityScore"]),
-            weight=0.20,
+            weight=0.10,
             flagged=security["securityScore"] < 50,
             status=f"Grade {security['grade']} ({security['securityScore']}/100)",
-            detail=f"{security['protocol']} transport with {len(security['headersPresent'])} security headers."
+            detail=f"{security['protocol']} transport with {len(security['headersPresent'])} security headers ({', '.join(security['headersPresent']) or 'None'})."
         ),
     ]
 
@@ -508,7 +535,8 @@ async def analyze_website_endpoint(
         technical_findings=technical_findings,
         limitations_notes="Non-invasive observational passive analysis of public headers and DOM artifacts. No active penetration testing.",
         chain_of_custody_hash=sha256,
-        created_at=datetime.datetime.now().isoformat()
+        created_at=datetime.datetime.now().isoformat(),
+        updated_at=datetime.datetime.now().isoformat()
     )
 
     save_case(case_record)

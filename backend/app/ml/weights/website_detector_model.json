@@ -1,0 +1,12 @@
+{
+  "model_name": "DeepTrace Website Multimodal Fusion Classifier",
+  "version": "1.4.0",
+  "validation_accuracy": 98.09523809523809,
+  "classes": [
+    "human_made",
+    "ai_generated",
+    "ai_assisted"
+  ],
+  "trained_epochs": 40,
+  "timestamp": 1793605876.4546356
+}

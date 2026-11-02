@@ -123,17 +123,17 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
       }
       console.log(`[ForensicEngine ${caseId}] Link forensic examination completed in ${Date.now() - tLinkStart}ms: ${verdict} (${confidence}%)`);
     } catch (linkErr: any) {
-      console.warn(`[ForensicEngine ${caseId}] Remote link analysis warning:`, linkErr);
+      console.warn(`[ForensicEngine ${caseId}] Web link analysis warning:`, linkErr);
       verdict = "inconclusive";
       confidence = 50.0;
       breakdown.push({
-        name: "Remote Link Verification",
+        name: "Web Destination Verification",
         category: "metadata_exif",
         score: 50.0,
         weight: 1.0,
         flagged: false,
         status: "Fetch Notice",
-        detail: `Remote connection notice: ${linkErr?.message || linkErr}`,
+        detail: `Connection notice: ${linkErr?.message || linkErr}`,
       });
     }
   }

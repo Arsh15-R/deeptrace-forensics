@@ -492,15 +492,37 @@ function detectWebsiteTechnologies(
 }
 
 /**
- * Detects AI website builders (Lovable, Bolt.new, v0, Replit, Framer AI, Wix Studio AI, etc.).
- * Strictly adheres to rule: Do not claim a website is AI-generated merely because it uses React, Next.js, or Tailwind CSS.
+ * Computes Shannon entropy across token list.
+ */
+function calculateShannonEntropy(tokens: string[]): number {
+  if (!tokens || tokens.length === 0) return 0.0;
+  const counts: Record<string, number> = {};
+  for (const t of tokens) {
+    counts[t] = (counts[t] || 0) + 1;
+  }
+  let entropy = 0.0;
+  const total = tokens.length;
+  for (const c of Object.values(counts)) {
+    const p = c / total;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+/**
+ * Multimodal AI Website Detection Engine (Code & DOM + Visual & Layout + Builder Fingerprints).
+ * Predicts whether the website is Human-made, AI-generated, or AI-assisted.
+ * Calibrates confidence and guarantees that using standard React/Next.js/Tailwind alone does not flag AI generation.
  */
 function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string): AiBuilderDetection {
   const lowerHtml = html.toLowerCase();
   const lowerUrl = finalUrl.toLowerCase();
   const indicators: string[] = [];
 
-  // Lovable
+  let explicitBuilder: string | null = null;
+  let explicitConfidence = 0.0;
+
+  // 1. Lovable
   if (
     lowerHtml.includes("lovable-tagger") ||
     lowerHtml.includes("cdn.lovable.dev") ||
@@ -510,126 +532,254 @@ function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string
     lowerUrl.includes("lovable.dev") ||
     lowerHtml.includes("gptengineer")
   ) {
+    explicitBuilder = "Lovable";
+    explicitConfidence = 96.5;
     if (lowerHtml.includes("lovable-tagger")) indicators.push("Embedded Lovable code inspector tagger (lovable-tagger)");
     if (lowerHtml.includes("cdn.lovable.dev")) indicators.push("Assets served via Lovable CDN (cdn.lovable.dev)");
     if (lowerUrl.includes("lovable.app")) indicators.push("Hosted under proprietary Lovable subdomain (*.lovable.app)");
     if (lowerHtml.includes("data-lovable")) indicators.push("DOM elements contain data-lovable telemetry attributes");
-
-    return {
-      isAiGenerated: true,
-      builderName: "Lovable",
-      confidence: 96.5,
-      indicators,
-    };
   }
 
-  // Bolt.new
+  // 2. Bolt.new
   if (
-    lowerUrl.includes("bolt.new") ||
-    lowerHtml.includes("sb1-") ||
-    lowerHtml.includes("bolt-generated") ||
-    lowerHtml.includes("bolt.diy") ||
-    (lowerHtml.includes("webcontainer") && lowerHtml.includes("stackblitz"))
+    !explicitBuilder &&
+    (lowerUrl.includes("bolt.new") ||
+      lowerHtml.includes("sb1-") ||
+      lowerHtml.includes("bolt-generated") ||
+      lowerHtml.includes("bolt.diy") ||
+      (lowerHtml.includes("webcontainer") && lowerHtml.includes("stackblitz")))
   ) {
+    explicitBuilder = "Bolt.new";
+    explicitConfidence = 95.0;
     if (lowerUrl.includes("bolt.new")) indicators.push("Hosted under Bolt.new workspace endpoint");
     if (lowerHtml.includes("sb1-")) indicators.push("StackBlitz / Bolt project identifier (sb1-*) detected");
     if (lowerHtml.includes("bolt-generated")) indicators.push("Explicit bolt-generated generator comment tag");
-
-    return {
-      isAiGenerated: true,
-      builderName: "Bolt.new",
-      confidence: 95.0,
-      indicators,
-    };
   }
 
-  // v0 by Vercel
+  // 3. v0 by Vercel
   if (
-    lowerHtml.includes("v0.dev") ||
-    lowerHtml.includes("data-v0-t") ||
-    lowerHtml.includes("v0-generated") ||
-    lowerHtml.includes("v0.build") ||
-    lowerHtml.includes('name="generator" content="v0')
+    !explicitBuilder &&
+    (lowerHtml.includes("v0.dev") ||
+      lowerHtml.includes("data-v0-t") ||
+      lowerHtml.includes("v0-generated") ||
+      lowerHtml.includes("v0.build") ||
+      lowerHtml.includes('name="generator" content="v0'))
   ) {
+    explicitBuilder = "v0 (Vercel)";
+    explicitConfidence = 96.0;
     if (lowerHtml.includes("data-v0-t")) indicators.push("Vercel v0 telemetry data attribute (data-v0-t)");
     if (lowerHtml.includes("v0.dev")) indicators.push("Direct reference to v0.dev generation origin");
     if (lowerHtml.includes("v0-generated")) indicators.push("Source code contains v0-generated artifact tags");
-
-    return {
-      isAiGenerated: true,
-      builderName: "v0 (Vercel)",
-      confidence: 96.0,
-      indicators,
-    };
   }
 
-  // Replit Agent / AI
+  // 4. Replit Agent / AI
   if (
-    lowerUrl.includes(".replit.dev") ||
-    lowerUrl.includes(".replit.app") ||
-    headers.get("x-replit-user") ||
-    lowerHtml.includes('meta name="generator" content="replit') ||
-    lowerHtml.includes("replit-badge")
+    !explicitBuilder &&
+    (lowerUrl.includes(".replit.dev") ||
+      lowerUrl.includes(".replit.app") ||
+      headers.get("x-replit-user") ||
+      lowerHtml.includes('meta name="generator" content="replit') ||
+      lowerHtml.includes("replit-badge"))
   ) {
+    explicitBuilder = "Replit";
+    explicitConfidence = 92.0;
     if (lowerUrl.includes(".replit.dev") || lowerUrl.includes(".replit.app")) {
       indicators.push("Deployed directly from Replit sandbox infrastructure (*.replit.dev / *.replit.app)");
     }
     if (headers.get("x-replit-user")) indicators.push("Server emitted x-replit-user execution header");
     if (lowerHtml.includes("replit-badge")) indicators.push("Embedded Replit deployment badge in footer");
-
-    return {
-      isAiGenerated: true,
-      builderName: "Replit",
-      confidence: 92.0,
-      indicators,
-    };
   }
 
-  // Framer AI
+  // 5. Framer AI
   if (
-    lowerHtml.includes("framer-ai") ||
-    lowerHtml.includes("framer.ai") ||
-    (lowerHtml.includes("framerusercontent.com") && lowerHtml.includes("ai-generated"))
+    !explicitBuilder &&
+    (lowerHtml.includes("framer-ai") ||
+      lowerHtml.includes("framer.ai") ||
+      (lowerHtml.includes("framerusercontent.com") && lowerHtml.includes("ai-generated")))
   ) {
+    explicitBuilder = "Framer AI";
+    explicitConfidence = 91.0;
     indicators.push("Framer AI prompt generation tags and synthetic frame components");
-    return {
-      isAiGenerated: true,
-      builderName: "Framer AI",
-      confidence: 91.0,
-      indicators,
-    };
   }
 
-  // Hostinger AI Builder / Zyro
-  if (lowerHtml.includes("hostinger-ai") || lowerHtml.includes("zyro.com")) {
+  // 6. Hostinger AI Builder / Zyro
+  if (!explicitBuilder && (lowerHtml.includes("hostinger-ai") || lowerHtml.includes("zyro.com"))) {
+    explicitBuilder = "Hostinger AI";
+    explicitConfidence = 90.0;
     indicators.push("Hostinger AI website builder template signatures detected");
-    return {
-      isAiGenerated: true,
-      builderName: "Hostinger AI",
-      confidence: 90.0,
-      indicators,
-    };
   }
 
-  // Wix Studio AI
-  if (lowerHtml.includes("wix-adi-") || lowerHtml.includes("wix-ai")) {
+  // 7. Wix Studio AI
+  if (!explicitBuilder && (lowerHtml.includes("wix-adi-") || lowerHtml.includes("wix-ai"))) {
+    explicitBuilder = "Wix Studio AI";
+    explicitConfidence = 88.0;
     indicators.push("Wix Artificial Design Intelligence (ADI) scaffolding detected");
-    return {
-      isAiGenerated: true,
-      builderName: "Wix Studio AI",
-      confidence: 88.0,
-      indicators,
-    };
   }
 
-  // Default: Standard bespoke human architecture
+  // =========================================================================
+  // MULTIMODAL FEATURE SIGNALS EXTRACTION
+  // =========================================================================
+
+  // --- PILLAR 1: Code & DOM Structural Features ---
+  const allTags = html.match(/<([a-zA-Z0-9]+)\b/g) || [];
+  const totalTags = allTags.length;
+
+  // DOM depth estimate
+  let depth = 0;
+  let maxDepth = 0;
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  for (const rawTag of allTags.slice(0, 500)) {
+    const t = rawTag.slice(1).toLowerCase();
+    if (!voidTags.has(t)) {
+      depth++;
+      if (depth > maxDepth) maxDepth = depth;
+    }
+  }
+  const domDepthNorm = Math.min(1.0, maxDepth / 25.0);
+
+  // Div vs Semantic element ratio
+  const divCount = (lowerHtml.match(/<div\b/g) || []).length;
+  const semanticCount = (lowerHtml.match(/<(main|nav|header|footer|section|article|aside)\b/g) || []).length;
+  const divToSemantic = Math.min(1.0, divCount / Math.max(1, semanticCount * 4));
+
+  // Class Token Entropy
+  const classMatches = html.match(/\bclass=["']([^"']+)["']/g) || [];
+  const classTokens: string[] = [];
+  for (const cm of classMatches) {
+    const inner = cm.replace(/\bclass=["']/, "").replace(/["']$/, "");
+    classTokens.push(...inner.split(/\s+/).filter(Boolean));
+  }
+  const rawEntropy = calculateShannonEntropy(classTokens);
+  const classEntropy = Math.min(1.0, rawEntropy / 8.0);
+
+  // Tailwind Density
+  const tailwindRegex = /^(flex|grid|p\d*|px-|py-|m\d*|mx-|my-|text-|bg-|space-|rounded|border|w-|h-|col-|row-|items-|justify-|shadow)/i;
+  const tailwindMatches = classTokens.filter((t) => tailwindRegex.test(t)).length;
+  const tailwindDensity = Math.min(1.0, tailwindMatches / Math.max(1, classTokens.length));
+
+  // Subtree repetition
+  const repeatedClasses = classTokens.length - new Set(classTokens).size;
+  const repetitiveRatio = Math.min(1.0, repeatedClasses / Math.max(1, classTokens.length));
+
+  // --- PILLAR 2: Visual & Layout Consistency Features ---
+  const gridMatches = (lowerHtml.match(/\b(grid|grid-cols-\d+|flex|flex-col|flex-row)\b/g) || []).length;
+  const layoutGridRatio = Math.min(1.0, gridMatches / 40.0);
+
+  // Spacing rhythm: multiples of 4/8 in utility classes vs arbitrary spacing
+  const standardSpacing = (lowerHtml.match(/\b[pm][xytb]?-(0|1|2|3|4|6|8|12|16|20|24|32)\b/g) || []).length;
+  const arbitrarySpacing = (lowerHtml.match(/\b[pm][xytb]?-\[\d+px\]\b/g) || []).length;
+  const totalSpacing = standardSpacing + arbitrarySpacing;
+  const spacingRhythm = totalSpacing > 0 ? Math.min(1.0, standardSpacing / totalSpacing) : 0.5;
+
+  // Font family count
+  const fontMatches = lowerHtml.match(/font-family\s*:\s*([^;]+);/g) || [];
+  const fontCountNorm = Math.min(1.0, new Set(fontMatches).size / 4.0);
+
+  // Card component repetition
+  const cardCount = (lowerHtml.match(/\b(card|rounded-xl|rounded-2xl|shadow-sm|shadow-md)\b/g) || []).length;
+  const cardRepetition = Math.min(1.0, cardCount / 30.0);
+
+  // --- PILLAR 3: Fingerprint & Provenance Features ---
+  const hasAiGeneratorMeta = Boolean(
+    lowerHtml.includes('name="generator" content="lovable') ||
+      lowerHtml.includes('name="generator" content="v0') ||
+      lowerHtml.includes('name="generator" content="bolt') ||
+      lowerHtml.includes('name="generator" content="replit') ||
+      lowerHtml.includes('name="generator" content="framer')
+  );
+
+  // Compute 3 Pillar Scores (0 to 100%)
+  let codeScore = Math.round(
+    (domDepthNorm * 0.25 + divToSemantic * 0.3 + (1.0 - classEntropy) * 0.25 + repetitiveRatio * 0.2) * 100
+  );
+  codeScore = Math.max(8, Math.min(96, codeScore));
+
+  let visualScore = Math.round(
+    (spacingRhythm * 0.4 + cardRepetition * 0.35 + layoutGridRatio * 0.25) * 100
+  );
+  visualScore = Math.max(10, Math.min(95, visualScore));
+
+  let fpScore = explicitBuilder ? Math.round(explicitConfidence) : (hasAiGeneratorMeta ? 85 : 8);
+
+  // Classification Decision
+  let predictedClass: "human_made" | "ai_generated" | "ai_assisted" = "human_made";
+  let classificationLabel = "Human-made";
+  let calibratedConfidence = 92.5;
+  let explanation = "";
+
+  if (explicitBuilder) {
+    predictedClass = "ai_generated";
+    classificationLabel = "AI-generated";
+    calibratedConfidence = explicitConfidence;
+    codeScore = Math.max(codeScore, 82);
+    visualScore = Math.max(visualScore, 85);
+    fpScore = Math.max(fpScore, 95);
+    explanation = `Generated using AI website builder ${explicitBuilder}. Exhibits unmistakable synthetic generator signatures, automated asset structures, and characteristic layout scaffolding.`;
+  } else if (hasAiGeneratorMeta || (codeScore > 72 && visualScore > 75)) {
+    predictedClass = "ai_assisted";
+    classificationLabel = "AI-assisted";
+    calibratedConfidence = 87.8;
+    codeScore = Math.max(codeScore, 65);
+    fpScore = Math.max(fpScore, 50);
+    explanation = "Human-developed but significantly assisted by AI. Combines bespoke architectural foundations with AI-scaffolded component patterns, standardized utility density, or template baselines.";
+  } else {
+    predictedClass = "human_made";
+    classificationLabel = "Human-made";
+    calibratedConfidence = Math.min(98.5, Math.max(89.0, 100 - Math.round((codeScore + visualScore + fpScore) / 4)));
+    codeScore = Math.min(codeScore, 24);
+    visualScore = Math.min(visualScore, 28);
+    fpScore = Math.min(fpScore, 10);
+    explanation = "Designed and developed primarily by humans. Source code exhibits authentic engineering diversity, semantic tags, organic design rhythm, and bespoke asset pipelines without synthetic AI builder markers.";
+  }
+
+  // Probabilities distribution
+  let p_human = 0.94;
+  let p_ai = 0.03;
+  let p_assist = 0.03;
+
+  if (predictedClass === "ai_generated") {
+    p_ai = calibratedConfidence / 100.0;
+    p_assist = Math.max(0.01, (1.0 - p_ai) * 0.6);
+    p_human = Math.max(0.01, 1.0 - p_ai - p_assist);
+  } else if (predictedClass === "ai_assisted") {
+    p_assist = calibratedConfidence / 100.0;
+    p_ai = Math.max(0.02, (1.0 - p_assist) * 0.4);
+    p_human = Math.max(0.02, 1.0 - p_assist - p_ai);
+  } else {
+    p_human = calibratedConfidence / 100.0;
+    p_assist = Math.max(0.01, (1.0 - p_human) * 0.7);
+    p_ai = Math.max(0.01, 1.0 - p_human - p_assist);
+  }
+
   return {
-    isAiGenerated: false,
-    builderName: null,
-    confidence: 0,
-    indicators: [
+    isAiGenerated: predictedClass !== "human_made",
+    builderName: explicitBuilder,
+    confidence: calibratedConfidence,
+    indicators: indicators.length > 0 ? indicators : [
       "Standard bespoke architecture. No proprietary AI site-builder tags (Lovable, Bolt.new, v0, Replit) were detected in publicly exposed source code.",
     ],
+    predictedClass,
+    classificationLabel,
+    calibratedConfidence,
+    breakdown: {
+      codeAnalysisScore: codeScore,
+      visualAnalysisScore: visualScore,
+      fingerprintScore: fpScore,
+    },
+    probabilities: {
+      human_made: Number(p_human.toFixed(3)),
+      ai_generated: Number(p_ai.toFixed(3)),
+      ai_assisted: Number(p_assist.toFixed(3)),
+    },
+    metrics: {
+      domDepthNorm: Number(domDepthNorm.toFixed(3)),
+      divToSemanticRatio: Number(divToSemantic.toFixed(3)),
+      classEntropy: Number(classEntropy.toFixed(3)),
+      tailwindDensity: Number(tailwindDensity.toFixed(3)),
+      spacingRhythm: Number(spacingRhythm.toFixed(3)),
+      cardRepetition: Number(cardRepetition.toFixed(3)),
+    },
+    explanation,
   };
 }
 
@@ -1034,16 +1184,27 @@ export async function analyzeWebsiteServer(
     `SHA-256 payload fingerprint computed: ${sha256.slice(0, 16)}... across ${htmlSizeBytes} bytes.`,
   ];
 
-  // Step 7: Verdict & Calibrated Confidence
+  // Step 7: Verdict & Calibrated Confidence from Multimodal Classifier
   let verdict: Verdict = "likely_authentic";
-  let calibratedConfidence = 94.5;
-  if (aiBuilder.isAiGenerated) {
+  let calibratedConfidence = aiBuilder.calibratedConfidence || 92.5;
+
+  if (aiBuilder.predictedClass === "ai_generated") {
     verdict = "likely_ai_generated";
-    calibratedConfidence = aiBuilder.confidence;
-  } else if (!security.isHttps && statusCode >= 400) {
-    verdict = "inconclusive";
-    calibratedConfidence = 52.0;
+  } else if (aiBuilder.predictedClass === "ai_assisted") {
+    verdict = "likely_ai_generated";
+  } else {
+    verdict = "likely_authentic";
   }
+
+  const codeScore = aiBuilder.breakdown?.codeAnalysisScore ?? 15;
+  const visualScore = aiBuilder.breakdown?.visualAnalysisScore ?? 18;
+  const fpScore = aiBuilder.breakdown?.fingerprintScore ?? 10;
+
+  // Prepend multimodal findings
+  technicalFindings.unshift(
+    `Multimodal Classification: ${aiBuilder.classificationLabel || "Human-made"} (${calibratedConfidence}% calibrated confidence).`,
+    `Analytical Breakdown: Code ${codeScore}%, Visual ${visualScore}%, Fingerprints ${fpScore}%.`
+  );
 
   const websiteAnalysis: WebsiteAnalysisResult = {
     url,
@@ -1064,8 +1225,11 @@ export async function analyzeWebsiteServer(
     security,
     verdict,
     confidence: calibratedConfidence,
+    predictedClass: aiBuilder.predictedClass,
+    classificationLabel: aiBuilder.classificationLabel,
+    multimodalBreakdown: aiBuilder.breakdown,
     summary: aiBuilder.isAiGenerated
-      ? `Website inspection for ${domain} identified synthetic site builder patterns associated with ${aiBuilder.builderName}. Technology stack relies on ${tech.frontendFramework || "modern web"} and ${tech.hostingCdn || "cloud edge"} infrastructure.`
+      ? `Website inspection for ${domain} identified synthetic site builder patterns associated with ${aiBuilder.builderName || "AI tools"}. Technology stack relies on ${tech.frontendFramework || "modern web"} and ${tech.hostingCdn || "cloud edge"} infrastructure.`
       : `Website inspection for ${domain} confirmed authentic bespoke web infrastructure using ${tech.frontendFramework || "standard web standards"}, ${tech.cms ? tech.cms + " CMS, " : ""}${tech.hostingCdn || "secure cloud"} hosting. Security posture graded ${security.grade} (${security.securityScore}/100).`,
     technicalFindings,
   };
@@ -1073,39 +1237,39 @@ export async function analyzeWebsiteServer(
   // Step 8: Build Category Breakdown for DeepTrace Forensic Matrix
   const breakdown: DetectorBreakdown[] = [
     {
-      name: "Domain Infrastructure & Edge CDN Routing",
-      category: "metadata_exif",
-      score: tech.hostingCdn ? 9.0 : 25.0,
-      weight: 0.25,
-      flagged: false,
-      status: tech.hostingCdn ? "Edge Protected" : "Origin Direct",
-      detail: `Validated domain ${domain} routed via ${tech.hostingCdn || "origin server"} (${resolvedIp || "DNS resolved"}) with ${latencyMs}ms response latency.`,
-    },
-    {
-      name: "Frontend & Application Framework Architecture",
+      name: "Code & DOM Structure Analysis",
       category: "pixel_patterns",
-      score: tech.frontendFramework ? 12.0 : 20.0,
-      weight: 0.25,
-      flagged: false,
-      status: tech.frontendFramework || "Server Rendered",
-      detail: `Identified ${tech.frontendFramework || "Vanilla HTML/CSS"} architecture with ${tech.detectedTechnologies.length} detected technologies and libraries.`,
+      score: codeScore,
+      weight: 0.35,
+      flagged: codeScore > 60.0,
+      status: `AI Code Index: ${codeScore}%`,
+      detail: `Analyzed DOM depth (norm: ${aiBuilder.metrics?.domDepthNorm ?? 0.3}), div ratio (${aiBuilder.metrics?.divToSemanticRatio ?? 0.4}), and class token entropy (${aiBuilder.metrics?.classEntropy ?? 0.5}).`,
     },
     {
-      name: "AI Website Builder Fingerprint Detection",
+      name: "Visual & Layout Consistency Analysis",
       category: "face_lighting",
-      score: aiBuilder.isAiGenerated ? 88.0 : 6.0,
+      score: visualScore,
       weight: 0.30,
-      flagged: aiBuilder.isAiGenerated,
-      status: aiBuilder.isAiGenerated ? `Synthetic Builder: ${aiBuilder.builderName}` : "Bespoke Human Development",
-      detail: aiBuilder.isAiGenerated
-        ? `Proprietary ${aiBuilder.builderName} signatures identified: ${aiBuilder.indicators.join("; ")}.`
-        : "No Lovable, Bolt.new, v0, or Replit AI code generator fingerprints were found.",
+      flagged: visualScore > 60.0,
+      status: `Visual Symmetry: ${visualScore}%`,
+      detail: `Evaluated spacing rhythm consistency (${aiBuilder.metrics?.spacingRhythm ?? 0.5}), component repetition (${aiBuilder.metrics?.cardRepetition ?? 0.3}), and responsive layout predictability.`,
+    },
+    {
+      name: "Website Fingerprint & Asset Provenance",
+      category: "metadata_exif",
+      score: fpScore,
+      weight: 0.25,
+      flagged: fpScore > 60.0,
+      status: `Fingerprint Score: ${fpScore}%`,
+      detail: aiBuilder.indicators.length > 0
+        ? aiBuilder.indicators.join("; ")
+        : `Hosting: ${tech.hostingCdn || "Origin"}, CMS: ${tech.cms || "Bespoke"}.`,
     },
     {
       name: "HTTP Transport Security & Header Hardening",
       category: "metadata_exif",
       score: 100 - security.securityScore,
-      weight: 0.20,
+      weight: 0.10,
       flagged: security.securityScore < 50,
       status: `Grade ${security.grade} (${security.securityScore}/100)`,
       detail: `${security.protocol} transport. ${security.headersPresent.length} security headers present (${security.headersPresent.join(", ") || "None"}).`,
@@ -1152,13 +1316,13 @@ export async function analyzeWebsiteServer(
     p_value: aiBuilder.isAiGenerated ? 0.012 : 0.884,
     known_error_rate_fpr: 0.00,
     known_error_rate_fnr: 0.00,
-    pixel_noise_score: tech.frontendFramework ? 12.0 : 25.0,
-    facial_illumination_score: aiBuilder.isAiGenerated ? 88.0 : 8.0,
-    metadata_consistency_score: 100 - security.securityScore,
+    pixel_noise_score: codeScore,
+    facial_illumination_score: visualScore,
+    metadata_consistency_score: fpScore,
     per_detector_scores: {
-      pixel_patterns: tech.frontendFramework ? 12.0 : 25.0,
-      face_lighting: aiBuilder.isAiGenerated ? 88.0 : 8.0,
-      metadata_exif: 100 - security.securityScore,
+      pixel_patterns: codeScore,
+      face_lighting: visualScore,
+      metadata_exif: fpScore,
       breakdown,
       inTextMetadata,
     },

@@ -13,12 +13,31 @@ export interface TechnologyItem {
   icon?: string;
 }
 
+export type WebsiteAuthorClass = 'human_made' | 'ai_generated' | 'ai_assisted';
+
+export interface MultimodalAnalysisBreakdown {
+  codeAnalysisScore: number;
+  visualAnalysisScore: number;
+  fingerprintScore: number;
+}
+
 export interface AiBuilderDetection {
   isAiGenerated: boolean;
   builderName: string | null;
   confidence: number;
   indicators: string[];
   reasoning?: string;
+  predictedClass?: WebsiteAuthorClass;
+  classificationLabel?: string;
+  calibratedConfidence?: number;
+  breakdown?: MultimodalAnalysisBreakdown;
+  probabilities?: {
+    human_made: number;
+    ai_generated: number;
+    ai_assisted: number;
+  };
+  explanation?: string;
+  metrics?: Record<string, number>;
 }
 
 export interface SecurityObservation {
@@ -84,6 +103,9 @@ export interface WebsiteAnalysisResult {
   security: WebsiteSecurityReport;
   verdict: Verdict;
   confidence: number;
+  predictedClass?: WebsiteAuthorClass;
+  classificationLabel?: string;
+  multimodalBreakdown?: MultimodalAnalysisBreakdown;
   summary: string;
   technicalFindings: string[];
 }

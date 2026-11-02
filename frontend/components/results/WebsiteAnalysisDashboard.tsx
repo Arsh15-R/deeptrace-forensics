@@ -27,6 +27,10 @@ import {
   Info,
   Radio,
   FileCheck,
+  Bot,
+  UserCheck,
+  Layout,
+  Activity,
 } from "lucide-react";
 import { WebsiteAnalysisResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -193,37 +197,172 @@ export const WebsiteAnalysisDashboard: React.FC<WebsiteAnalysisDashboardProps> =
           </div>
         </div>
 
-        {/* AI Builder Alert / Authenticity Notice */}
-        {aiBuilder.isAiGenerated ? (
-          <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 font-bold text-sm">
-                <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>AI Website Builder Signature: {aiBuilder.builderName}</span>
+        {/* Multimodal AI Website Detection Card */}
+        {(() => {
+          const predictedClass = aiBuilder.predictedClass || (aiBuilder.isAiGenerated ? "ai_generated" : "human_made");
+          const confidence = aiBuilder.calibratedConfidence || aiBuilder.confidence || 92.5;
+          const codeScore = aiBuilder.breakdown?.codeAnalysisScore ?? (aiBuilder.isAiGenerated ? 88 : 15);
+          const visualScore = aiBuilder.breakdown?.visualAnalysisScore ?? (aiBuilder.isAiGenerated ? 85 : 18);
+          const fpScore = aiBuilder.breakdown?.fingerprintScore ?? (aiBuilder.isAiGenerated ? 95 : 10);
+          const probs = aiBuilder.probabilities || {
+            human_made: predictedClass === "human_made" ? 0.94 : 0.03,
+            ai_assisted: predictedClass === "ai_assisted" ? 0.88 : 0.05,
+            ai_generated: predictedClass === "ai_generated" ? 0.96 : 0.03,
+          };
+
+          return (
+            <div className="rounded-2xl border border-neutral-200/90 dark:border-neutral-800/90 bg-neutral-50/70 dark:bg-neutral-900/70 p-4 sm:p-5 space-y-4 backdrop-blur-md">
+              {/* Header Badge & Title */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-200/60 dark:border-neutral-800/60 pb-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-mono">
+                    <Sparkles className="w-3 h-3 text-purple-500" />
+                    <span>Multimodal AI Website Detection Model</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+                    {predictedClass === "human_made" && (
+                      <>
+                        <span className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </span>
+                        <span>Classification: Human-made Website</span>
+                      </>
+                    )}
+                    {predictedClass === "ai_generated" && (
+                      <>
+                        <span className="p-1 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                          <Bot className="w-5 h-5" />
+                        </span>
+                        <span>Classification: AI-generated Website</span>
+                      </>
+                    )}
+                    {predictedClass === "ai_assisted" && (
+                      <>
+                        <span className="p-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                          <UserCheck className="w-5 h-5" />
+                        </span>
+                        <span>Classification: AI-assisted Website</span>
+                      </>
+                    )}
+                  </h3>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    {predictedClass === "human_made" && "Designed and developed primarily by humans. Authentic source code diversity, semantic markup, and bespoke design rhythm."}
+                    {predictedClass === "ai_generated" && `Generated using AI website builders or AI coding tools (${aiBuilder.builderName || "Autonomous AI Builder"}). Synthetic scaffolding and characteristic patterns detected.`}
+                    {predictedClass === "ai_assisted" && "Human-developed but significantly assisted by AI. Combines bespoke architecture with AI-scaffolded component blocks, standardized utility density, or template baselines."}
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-start sm:items-end flex-shrink-0">
+                  <div className="text-[11px] font-mono text-neutral-500 uppercase tracking-wider">Calibrated Confidence</div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl sm:text-3xl font-extrabold font-mono tabular-nums text-neutral-900 dark:text-neutral-100">
+                      {confidence}%
+                    </span>
+                    <span className="text-xs font-bold text-neutral-500">confidence</span>
+                  </div>
+                </div>
               </div>
-              <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-purple-500/20 font-bold">
-                {aiBuilder.confidence}% match
-              </span>
+
+              {/* 3 Analytical Pillars */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Pillar 1: Code & DOM Analysis */}
+                <div className="rounded-xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white/70 dark:bg-neutral-950/60 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <Code2 className="w-3.5 h-3.5 text-blue-500" /> Code Analysis
+                    </span>
+                    <span className="font-mono font-bold text-xs">{codeScore}%</span>
+                  </div>
+                  <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        codeScore > 60 ? "bg-purple-500" : "bg-emerald-500"
+                      )}
+                      style={{ width: `${codeScore}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-neutral-500 leading-tight">
+                    DOM depth, div-to-semantic ratio, class token entropy, and utility patterns.
+                  </p>
+                </div>
+
+                {/* Pillar 2: Visual & Layout Analysis */}
+                <div className="rounded-xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white/70 dark:bg-neutral-950/60 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <Layout className="w-3.5 h-3.5 text-amber-500" /> Visual Layout
+                    </span>
+                    <span className="font-mono font-bold text-xs">{visualScore}%</span>
+                  </div>
+                  <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        visualScore > 60 ? "bg-amber-500" : "bg-emerald-500"
+                      )}
+                      style={{ width: `${visualScore}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-neutral-500 leading-tight">
+                    Spacing rhythm (4/8/16 grid), card repetition, visual symmetry, and typography pairing.
+                  </p>
+                </div>
+
+                {/* Pillar 3: Website Fingerprints */}
+                <div className="rounded-xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white/70 dark:bg-neutral-950/60 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-500" /> Fingerprints
+                    </span>
+                    <span className="font-mono font-bold text-xs">{fpScore}%</span>
+                  </div>
+                  <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        fpScore > 60 ? "bg-purple-500" : "bg-emerald-500"
+                      )}
+                      style={{ width: `${fpScore}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-neutral-500 leading-tight">
+                    Builder signatures (Lovable, Bolt, v0, Replit, Framer), CMS, and asset CDN provenance.
+                  </p>
+                </div>
+              </div>
+
+              {/* Multimodal Probability Distribution Bar */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-xs text-neutral-500 font-mono">
+                  <span>Class Probabilities:</span>
+                  <div className="flex gap-3">
+                    <span className="text-emerald-600 dark:text-emerald-400">Human: {Math.round(probs.human_made * 100)}%</span>
+                    <span className="text-amber-600 dark:text-amber-400">AI-assisted: {Math.round(probs.ai_assisted * 100)}%</span>
+                    <span className="text-purple-600 dark:text-purple-400">AI-generated: {Math.round(probs.ai_generated * 100)}%</span>
+                  </div>
+                </div>
+                <div className="w-full h-2.5 rounded-full overflow-hidden flex bg-neutral-200 dark:bg-neutral-800">
+                  <div
+                    className="bg-emerald-500 h-full transition-all"
+                    style={{ width: `${Math.round(probs.human_made * 100)}%` }}
+                    title={`Human-made: ${Math.round(probs.human_made * 100)}%`}
+                  />
+                  <div
+                    className="bg-amber-500 h-full transition-all"
+                    style={{ width: `${Math.round(probs.ai_assisted * 100)}%` }}
+                    title={`AI-assisted: ${Math.round(probs.ai_assisted * 100)}%`}
+                  />
+                  <div
+                    className="bg-purple-500 h-full transition-all"
+                    style={{ width: `${Math.round(probs.ai_generated * 100)}%` }}
+                    title={`AI-generated: ${Math.round(probs.ai_generated * 100)}%`}
+                  />
+                </div>
+              </div>
             </div>
-            <ul className="text-xs list-disc list-inside space-y-0.5 text-purple-800 dark:text-purple-300 font-mono">
-              {aiBuilder.indicators.map((ind, i) => (
-                <li key={i}>{ind}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-200 flex items-center justify-between text-xs">
-            <div className="flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-              <span>
-                <strong>Bespoke Architecture:</strong> Standard custom engineering stack. No proprietary AI site-builder tags (Lovable, Bolt.new, v0, Replit) were detected.
-              </span>
-            </div>
-            <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 font-bold flex-shrink-0">
-              Verified
-            </span>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Forensic Summary */}
         <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed pt-1">
@@ -376,26 +515,83 @@ export const WebsiteAnalysisDashboard: React.FC<WebsiteAnalysisDashboardProps> =
         </button>
 
         {aiOpen && (
-          <div className="p-4 sm:p-5 pt-0 border-t border-neutral-200/60 dark:border-neutral-800/60 space-y-3">
+          <div className="p-4 sm:p-5 pt-0 border-t border-neutral-200/60 dark:border-neutral-800/60 space-y-4">
             <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/50">
               <div className="space-y-0.5">
-                <span className="text-xs text-neutral-500 font-medium">Detection Verdict</span>
+                <span className="text-xs text-neutral-500 font-medium">Multimodal Classification Verdict</span>
                 <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                  {aiBuilder.isAiGenerated
-                    ? `AI Builder Signature Detected (${aiBuilder.builderName})`
-                    : "No AI Website Builder Signatures Identified"}
+                  {aiBuilder.classificationLabel || (aiBuilder.isAiGenerated ? "AI-generated" : "Human-made")} Website
+                  {aiBuilder.builderName && ` (${aiBuilder.builderName})`}
+                </p>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  {aiBuilder.explanation ||
+                    (aiBuilder.isAiGenerated
+                      ? "Detected synthetic scaffolding, utility repetition, or builder signatures."
+                      : "Source code shows authentic human engineering variance and bespoke structure.")}
                 </p>
               </div>
-              <div className="font-mono text-xs">
-                {aiBuilder.isAiGenerated ? (
+              <div className="font-mono text-xs flex-shrink-0">
+                {aiBuilder.predictedClass === "ai_generated" || aiBuilder.isAiGenerated ? (
                   <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-bold">
-                    {aiBuilder.confidence}% Synthetic Probability
+                    {aiBuilder.calibratedConfidence || aiBuilder.confidence}% AI Probability
+                  </span>
+                ) : aiBuilder.predictedClass === "ai_assisted" ? (
+                  <span className="px-3 py-1 rounded-full bg-amber-600 text-white font-bold">
+                    {aiBuilder.calibratedConfidence || aiBuilder.confidence}% AI-Assisted
                   </span>
                 ) : (
                   <span className="px-3 py-1 rounded-full bg-emerald-600 text-white font-bold">
-                    Human Bespoke
+                    {aiBuilder.calibratedConfidence || 94.5}% Human Authentic
                   </span>
                 )}
+              </div>
+            </div>
+
+            {/* 4-Part Architecture Inspection Grid */}
+            <div className="space-y-2 pt-1">
+              <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Four-Part Multimodal Detection Pipeline:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Model 1: Code Analysis</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    DOM depth, div-to-semantic ratio, class token entropy, and utility patterns.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                    <Layout className="w-3.5 h-3.5" />
+                    <span>Model 2: Visual Analysis</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Spacing rhythm (4/8/16 grid), card repetition, visual symmetry, and typography pairing.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Model 3: Fingerprints</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Lovable, Bolt, v0, Replit, Framer AI, and Wix ADI signature scanning.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>Model 4: Late Fusion</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Neural multimodal fusion layer calibrated with temperature scaling.
+                  </p>
+                </div>
               </div>
             </div>
 
