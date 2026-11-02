@@ -84,3 +84,17 @@ Thumbs.db
 
 # Local tools & large binaries
 tools/
+
+# Training Datasets and Model Checkpoints (Never commit large weights/datasets)
+data/
+backend/training/data/
+**/data/train/
+**/data/val/
+**/data/test/
+backend/models/*.pt
+backend/models/*.pth
+backend/models/*.bin
+backend/models/*.onnx
+!backend/models/metrics.json
+!backend/models/config.json
+

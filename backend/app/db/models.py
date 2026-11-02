@@ -36,7 +36,7 @@ class CaseRecord(BaseModel):
     officer_name: str
     officer_badge: str
     department: str
-    media_type: str  # 'image' | 'video' | 'link' | 'text'
+    media_type: str  # 'image' | 'video' | 'website' | 'text'
     file_name: Optional[str] = None
     source_url: Optional[str] = None
     storage_path: Optional[str] = None
@@ -93,10 +93,6 @@ class ClientAuditLogRequest(BaseModel):
 
 class TextAnalysisRequest(BaseModel):
     text: str = Field(..., min_length=20, max_length=50000, description="The textual statement or transcript to analyze")
-    case_reference: Optional[str] = None
-
-class LinkAnalysisRequest(BaseModel):
-    url: str = Field(..., description="Public media URL to securely ingest")
     case_reference: Optional[str] = None
 
 class WebsiteAnalysisRequest(BaseModel):

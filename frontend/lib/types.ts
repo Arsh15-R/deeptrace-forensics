@@ -2,7 +2,7 @@ export type Verdict = 'likely_authentic' | 'inconclusive' | 'likely_ai_generated
 
 export type Assessment = 'likely_manipulated' | 'no_strong_indicators_detected' | 'inconclusive';
 
-export type MediaType = 'image' | 'video' | 'audio' | 'text' | 'document' | 'website' | 'link';
+export type MediaType = 'image' | 'video' | 'audio' | 'text' | 'document' | 'website';
 
 export interface TechnologyItem {
   name: string;

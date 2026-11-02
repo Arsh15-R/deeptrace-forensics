@@ -261,6 +261,17 @@ export const TextInput: React.FC = () => {
 
   return (
     <form onSubmit={handleAnalyze} className="space-y-4">
+      {/* Advisory Screening Banner */}
+      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start space-x-2.5 text-xs text-amber-700 dark:text-amber-300">
+        <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-0.5">
+          <p className="font-bold">Advisory Screening Only — High False-Positive Rate</p>
+          <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-200/90">
+            Text AI detection carries elevated error rates on formal, technical, and non-native English writing. Stylometric indicators are screening heuristics only and must NOT be used as conclusive judicial evidence.
+          </p>
+        </div>
+      </div>
+
       {/* Textarea or Uploaded Document */}
       <div className="relative">
         <textarea

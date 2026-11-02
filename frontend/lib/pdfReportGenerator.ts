@@ -358,7 +358,7 @@ export function generateForensicPdfBuffer(caseData: CaseRecord): Uint8Array {
   drawText(`${caseData.model_name} (Build ${caseData.model_version})`, methCol1 + 100, methY, "/F1", 7, "#334155");
 
   drawText("Calibration Standard:", methCol2, methY, "/F2", 7, "#0F172A");
-  drawText("Neyman-Pearson Calibrated Likelihood", methCol2 + 95, methY, "/F1", 7, "#334155");
+  drawText("Empirical Temperature-Scaled Likelihood", methCol2 + 95, methY, "/F1", 7, "#334155");
 
   methY -= 18;
   drawText("Benchmark Error Rates:", methCol1, methY, "/F2", 7, "#0F172A");

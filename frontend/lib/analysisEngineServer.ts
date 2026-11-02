@@ -10,7 +10,6 @@ import {
   extractPdfTextAndMetadata,
   extractDocxTextAndMetadata,
 } from "@/lib/textForensicsServer";
-import { analyzeLinkForensics } from "@/lib/linkForensicsServer";
 import { analyzeWebsiteServer } from "@/lib/websiteAnalysisServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
@@ -91,51 +90,6 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   // =========================================================================
   if (input.mediaType === "website" && input.sourceUrl) {
     return await analyzeWebsiteServer(input.sourceUrl, input.caseRef);
-  }
-
-  if (input.mediaType === "link" && input.sourceUrl) {
-    const tLinkStart = Date.now();
-    try {
-      const linkResult = await analyzeLinkForensics(input.sourceUrl, input.caseRef);
-      if (linkResult.routedMediaType !== "link" && linkResult.buffer) {
-        // Auto-route underlying binary media (e.g. direct image/video/audio/document link)
-        input.mediaType = linkResult.routedMediaType;
-        input.buffer = linkResult.buffer;
-        input.filename = linkResult.filename;
-        mimeType = linkResult.mimeType;
-        sha256 = linkResult.sha256;
-        fileSizeBytes = linkResult.fileSizeBytes;
-      } else {
-        // Web Application / Examination Platform / HTML Document Evidence
-        verdict = linkResult.verdict || "likely_authentic";
-        confidence = linkResult.confidence || 92.4;
-        pixelScore = linkResult.pixelScore || 12.0;
-        lightingScore = linkResult.lightingScore || 14.0;
-        metadataScore = linkResult.metadataScore || 8.0;
-        if (linkResult.breakdown) breakdown.push(...linkResult.breakdown);
-        inTextMetadata = linkResult.inTextMetadata || null;
-        textSnippet = linkResult.extractedText?.slice(0, 500) || null;
-        sha256 = linkResult.sha256;
-        fileSizeBytes = linkResult.fileSizeBytes;
-        mimeType = linkResult.mimeType;
-        input.filename = linkResult.filename;
-        if (linkResult.buffer) input.buffer = linkResult.buffer;
-      }
-      console.log(`[ForensicEngine ${caseId}] Link forensic examination completed in ${Date.now() - tLinkStart}ms: ${verdict} (${confidence}%)`);
-    } catch (linkErr: any) {
-      console.warn(`[ForensicEngine ${caseId}] Web link analysis warning:`, linkErr);
-      verdict = "inconclusive";
-      confidence = 50.0;
-      breakdown.push({
-        name: "Web Destination Verification",
-        category: "metadata_exif",
-        score: 50.0,
-        weight: 1.0,
-        flagged: false,
-        status: "Fetch Notice",
-        detail: `Connection notice: ${linkErr?.message || linkErr}`,
-      });
-    }
   }
 
   // =========================================================================
@@ -272,7 +226,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     );
   }
 
-  const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : (input.mediaType === "link" || input.mediaType === "website" ? ".html" : ""));
+  const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : (input.mediaType === "website" ? ".html" : ""));
   const storageRelPath = `evidence/${caseId}${ext}`;
   const heatmapRelPath = (input.mediaType === "image" || pdfScannedImageBuffer) ? `heatmaps/${caseId}.png` : null;
   const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
@@ -298,7 +252,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     ) {
       if (input.mediaType === "image") uploadMime = "image/jpeg";
       else if (input.mediaType === "audio") uploadMime = "audio/wav";
-      else if (input.mediaType === "link" || input.mediaType === "website") uploadMime = "text/html";
+      else if (input.mediaType === "website") uploadMime = "text/html";
       else uploadMime = "application/pdf";
     }
 

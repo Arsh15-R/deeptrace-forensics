@@ -88,7 +88,7 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases, onRef
         return <Film className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />;
       case "audio":
         return <Volume2 className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />;
-      case "link":
+      case "website":
         return <Globe className="w-3.5 h-3.5 text-cyan-500 dark:text-cyan-400" />;
       case "text":
       case "document":
@@ -178,7 +178,7 @@ export const CaseHistoryTable: React.FC<CaseHistoryTableProps> = ({ cases, onRef
             <option value="image">Images</option>
             <option value="video">Videos</option>
             <option value="audio">Audio</option>
-            <option value="link">Links</option>
+            <option value="website">Websites</option>
             <option value="text">Text</option>
           </select>
         </div>

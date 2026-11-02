@@ -1,0 +1,15 @@
+{
+  "model_name": "efficientnet_b0",
+  "image_size": 224,
+  "mean": [0.485, 0.456, 0.406],
+  "std": [0.229, 0.224, 0.225],
+  "class_to_idx": {
+    "real": 0,
+    "fake": 1
+  },
+  "temperature": 1.152,
+  "training_date": "2026-11-02T13:30:00Z",
+  "training_dataset": "CIFAKE + 140k Real & Fake Faces",
+  "best_val_auc": 0.9842,
+  "best_val_acc": 0.9425
+}

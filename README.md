@@ -10,14 +10,14 @@ DeepTrace is a full-stack digital forensic examination platform engineered speci
 
 ## Key Capabilities & Evidentiary Standards
 
-1. **Four-Channel Media Screening (Segmented Control)**
-   - **Image:** Drag-and-drop / file picker for JPEG, PNG, WebP, and TIFF (up to 50 MB). Computes client-side and server-side NIST FIPS 180-4 SHA-256 hashes immediately upon ingest.
-   - **Video:** Drag-and-drop / file picker for MP4, MOV, AVI, and WebM (up to 200 MB). Evaluates keyframe optical flow, temporal blinking cadences, and audio formant anomalies. Supports asynchronous Celery + Redis workers.
-   - **Media Link:** Server-side ingestion protected by strict **SSRF defense** (automatically detects and blocks RFC 1918 private subnets, loopbacks, link-local, and AWS/GCP cloud metadata endpoints) with a 12-second timeout and 50 MB ceiling.
-   - **Text Statement:** Evaluates transcripts and written statements for sentence burstiness, vocabulary entropy, and stylistic markers. Features a prominent reliability advisory noting higher error rates on written text.
+1. **Multi-Channel Media & Web Screening (Segmented Control)**
+   - **Image:** Drag-and-drop / file picker for JPEG, PNG, WebP, and TIFF (up to 50 MB). Computes client-side and server-side SHA-256 hashes immediately upon ingest. Evaluated via a trained deep visual classifier with Grad-CAM anomaly heatmaps and test-time augmentation confidence intervals.
+   - **Video:** Drag-and-drop / file picker for MP4, MOV, AVI, and WebM (up to 200 MB). Evaluates keyframe optical flow, temporal consistency, and audio spectral anomalies. Supports asynchronous Celery + Redis workers.
+   - **Website Analysis:** Inspects public URLs for frontend frameworks, CMS, hosting, metadata, security headers, and multimodal AI website builder indicators (Lovable, Bolt.new, v0, etc.) with strict SSRF defense.
+   - **Text Statement:** Evaluates transcripts and written statements for sentence burstiness, vocabulary entropy, and stylistic markers. Features a prominent reliability advisory noting higher false-positive rates on written text.
 
 2. **Calibrated Forensic Verdicts & Uncertainty Bounds**
-   - In accordance with the **Neyman-Pearson decision rule**, results are never presented as 100% or 0% certain.
+   - Probabilities are calibrated with temperature scaling and bounded to reflect real-world empirical uncertainty, avoiding overconfident certainty.
    - Three distinct categorical verdicts:
      - **Likely authentic** (<35% synthetic likelihood)
      - **Inconclusive** (35% to 65% synthetic likelihood)
@@ -25,9 +25,9 @@ DeepTrace is a full-stack digital forensic examination platform engineered speci
    - Every score includes a **95% Confidence Interval band** `[CI Low% – CI High%]`.
 
 3. **Multi-Detector Breakdown Matrix**
-   - **Pixel Patterns:** High-frequency spectral residuals and Fourier power spectrum checkerboard artifacts.
-   - **Facial & Illumination Vectors:** Corneal glint symmetry, specular highlights, and shadow directional physics.
-   - **Metadata & EXIF Signatures:** Camera hardware sensor PRNU profiles, quantization tables, and C2PA provenance credentials.
+   - **Pixel Patterns:** High-frequency spectral residuals, deep visual features, and Fourier power spectrum artifacts.
+   - **Facial & Illumination Vectors:** Facial illumination consistency and directional shadow alignment.
+   - **Metadata & EXIF Signatures:** EXIF compression markers, quantization profiles, and file metadata provenance.
    - **Motion Over Time:** Inter-frame facial landmark warping, blinking cadence, and optical flow continuity (video only).
    - **Audio Vocoder Forensics:** Phase vocoder discontinuity, spectral cutoff, and synthetic voice cloning frequency markers.
 
@@ -42,7 +42,7 @@ DeepTrace is a full-stack digital forensic examination platform engineered speci
      - Overall Verdict with calibrated confidence intervals
      - Per-detector score weights and findings
      - Embedded original evidence & anomaly heatmap figures
-     - Model build specifications, known error rates (FPR: 4.2%, FNR: 6.8%), and procedural limitations
+     - Model build specifications, empirical benchmark error rates (dynamically sourced from evaluation test sets), and procedural limitations
      - Official officer and supervisory examiner signature blocks
 
 6. **Immutable Audit Ledger & Role-Based Access Control**

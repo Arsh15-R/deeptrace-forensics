@@ -39,7 +39,7 @@ export default function RootLayout({
                 <b>DeepTrace Forensic Screening Division</b> • Law Enforcement Restricted Network
               </div>
               <div>
-                NIST FIPS 180-4 SHA-256 Validated • Neyman-Pearson Decision Boundaries
+                Cryptographic SHA-256 Digest • Temperature-Calibrated Likelihood
               </div>
             </div>
           </footer>

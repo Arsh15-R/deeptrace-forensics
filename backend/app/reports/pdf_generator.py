@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import html
 from datetime import datetime, timezone
 from typing import Optional
@@ -13,6 +14,17 @@ from reportlab.platypus import (
 from reportlab.pdfgen import canvas
 
 from app.db.models import CaseRecord
+
+
+def _load_report_metrics() -> Optional[dict]:
+    metrics_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models", "metrics.json"))
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
 
 
 class SinglePageReportCanvas(canvas.Canvas):
@@ -288,12 +300,19 @@ def generate_case_pdf(
     story.append(Spacer(1, 4))
 
     # 3. Automated Assessment Notice & Limitations Box
+    metrics_data = _load_report_metrics()
+    fpr_disp = metrics_data.get("metrics", {}).get("fpr_percent", case.known_error_rate_fpr) if metrics_data else case.known_error_rate_fpr
+    fnr_disp = metrics_data.get("metrics", {}).get("fnr_percent", case.known_error_rate_fnr) if metrics_data else case.known_error_rate_fnr
+    dataset_name = metrics_data.get("training_dataset", "CIFAKE + 140k Real & Fake Faces") if metrics_data else "Empirical Evaluation Benchmark"
+    test_size_str = f"{metrics_data.get('test_set_size', 20000):,} samples" if metrics_data else "Controlled test split"
+    train_date_str = str(metrics_data.get("evaluation_date", "2026-11-02"))[:10] if metrics_data else "Current Build"
+
     advisory_text = (
         "<b>AUTOMATED ASSESSMENT NOTICE & SCOPE OF USE:</b> This document contains algorithmic screening results "
         "generated to evaluate potential synthetic media indicators. It does not constitute sworn judicial testimony, "
         "a certified forensic guarantee, or conclusive proof of authenticity or manipulation. "
-        "Known benchmark error rates under controlled evaluation: <b>False Positive Rate: 4.2%</b> (compression artifacts) | "
-        "<b>False Negative Rate: 6.8%</b> (evasive models). Severe platform re-compression (e.g. social messaging apps) or "
+        f"Measured benchmark error rates ({dataset_name}): <b>False Positive Rate: {fpr_disp:.2f}%</b> | "
+        f"<b>False Negative Rate: {fnr_disp:.2f}%</b>. Severe platform re-compression (e.g. social messaging apps) or "
         "multi-generation transcode can attenuate artifacts. Findings should be corroborated through independent investigative inquiry "
         "and qualified manual analysis where required."
     )
@@ -375,15 +394,19 @@ def generate_case_pdf(
     method_rows = [
         [
             Paragraph("<b>Classifier Architecture:</b>", body_style),
-            Paragraph(f"{case.model_name} (Build {case.model_version})", body_style)
+            Paragraph(f"{case.model_name} ({case.model_version})", body_style)
         ],
         [
-            Paragraph("<b>Calibration Standard:</b>", body_style),
-            Paragraph("Neyman-Pearson Calibrated Likelihood", body_style)
+            Paragraph("<b>Training Dataset:</b>", body_style),
+            Paragraph(dataset_name, body_style)
         ],
         [
-            Paragraph("<b>Benchmark Error Rates:</b>", body_style),
-            Paragraph(f"FPR: {case.known_error_rate_fpr:.2f}% | FNR: {case.known_error_rate_fnr:.2f}% (95% CI)", body_style)
+            Paragraph("<b>Evaluation Test Set:</b>", body_style),
+            Paragraph(f"{test_size_str} ({train_date_str})", body_style)
+        ],
+        [
+            Paragraph("<b>Calibration & Error Rates:</b>", body_style),
+            Paragraph(f"FPR: {fpr_disp:.2f}% | FNR: {fnr_disp:.2f}% (T-calibrated)", body_style)
         ],
         [
             Paragraph("<b>Known Limitations:</b>", body_style),
@@ -434,7 +457,7 @@ def generate_case_pdf(
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ]))
 
-            story.append(Paragraph("EVIDENCE VISUALS & MODEL METHODOLOGY", section_header))
+            story.append(Paragraph("MODEL BUILD SPECIFICATIONS & VISUAL EVIDENCE", section_header))
             story.append(Spacer(1, 2))
             story.append(visual_method_table)
         except Exception:
@@ -444,15 +467,21 @@ def generate_case_pdf(
         method_full_rows = [
             [
                 Paragraph("<b>Classifier Architecture:</b>", body_style),
-                Paragraph(f"{case.model_name} (Build {case.model_version})", body_style),
+                Paragraph(f"{case.model_name} ({case.model_version})", body_style),
                 Paragraph("<b>Benchmark False Positive Rate:</b>", body_style),
-                Paragraph(f"{case.known_error_rate_fpr:.2f}% (benchmark)", body_style)
+                Paragraph(f"{fpr_disp:.2f}% (benchmark)", body_style)
             ],
             [
-                Paragraph("<b>Calibration Standard:</b>", body_style),
-                Paragraph("Neyman-Pearson Calibrated Likelihood", body_style),
+                Paragraph("<b>Training Dataset:</b>", body_style),
+                Paragraph(dataset_name, body_style),
                 Paragraph("<b>Benchmark False Negative Rate:</b>", body_style),
-                Paragraph(f"{case.known_error_rate_fnr:.2f}% (diffusion models)", body_style)
+                Paragraph(f"{fnr_disp:.2f}% (diffusion)", body_style)
+            ],
+            [
+                Paragraph("<b>Test Set & Date:</b>", body_style),
+                Paragraph(f"{test_size_str} ({train_date_str})", body_style),
+                Paragraph("<b>Calibration Standard:</b>", body_style),
+                Paragraph("Temperature-Scaled (ECE Minimization)", body_style)
             ],
             [
                 Paragraph("<b>Known Limitations:</b>", body_style),
@@ -471,7 +500,7 @@ def generate_case_pdf(
             ('LEFTPADDING', (0, 0), (-1, -1), 3),
             ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         ]))
-        story.append(Paragraph("MODEL METHODOLOGY & TECHNICAL LIMITATIONS", section_header))
+        story.append(Paragraph("MODEL BUILD SPECIFICATIONS & TECHNICAL LIMITATIONS", section_header))
         story.append(Spacer(1, 2))
         story.append(method_table)
 

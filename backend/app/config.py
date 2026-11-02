@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
     CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
     
+    # Detector Backend: 'trained' | 'mock'
+    DETECTOR_BACKEND: str = os.getenv("DETECTOR_BACKEND", "trained")
+    
     # Evidence & Media Limits
     MAX_IMAGE_SIZE_BYTES: int = 50 * 1024 * 1024       # 50 MB
     MAX_VIDEO_SIZE_BYTES: int = 200 * 1024 * 1024      # 200 MB

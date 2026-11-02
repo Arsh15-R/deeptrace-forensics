@@ -187,7 +187,7 @@ export const ImageUploader: React.FC = () => {
         setTimeout(() => {
           if (!userCancelledRef.current) {
             setProgress(88);
-            setProgressLabel("Computing thermal error level analysis & sensor PRNU variance...");
+            setProgressLabel("Evaluating deep visual feature extraction & spatial anomaly map...");
             setProgressDetail("Stage 3 of 4: Synthesis Confidence Verification");
             if (process.env.NODE_ENV !== "production") console.log("[DeepTrace Client] Stage 2.2: Progress 88%");
           }
@@ -198,7 +198,7 @@ export const ImageUploader: React.FC = () => {
         setTimeout(() => {
           if (!userCancelledRef.current) {
             setProgress(94);
-            setProgressLabel("Calibrating Neyman-Pearson decision boundary & signing audit record...");
+            setProgressLabel("Calibrating uncertainty interval & signing audit record...");
             setProgressDetail("Stage 4 of 4: Awaiting final verification from analysis engine...");
           }
         }, 1800)
@@ -250,7 +250,7 @@ export const ImageUploader: React.FC = () => {
       // Stage 4: Jump from 94% to 100% on actual verified response
       setProgress(100);
       setProgressLabel("Examination certified. Opening forensic dossier...");
-      setProgressDetail("Stage 4 of 4: Neyman-Pearson Calibration Complete");
+      setProgressDetail("Stage 4 of 4: Temperature-Calibrated Evaluation Complete");
 
       setTimeout(() => {
         try {

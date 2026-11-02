@@ -82,7 +82,7 @@ export default function HomePage() {
                     </span>
                     <span className="text-neutral-400 flex-shrink-0">•</span>
                     <span className="text-neutral-600 dark:text-neutral-400 truncate max-w-xs block">
-                      {item.file_name || (item.source_url ? (item.media_type === "website" ? "Website Inspection" : "Remote URL") : "Linguistic Statement")}
+                      {item.file_name || (item.source_url ? (item.media_type === "website" ? "Website Inspection" : item.source_url) : "Linguistic Statement")}
                     </span>
                   </div>
                   <div className="font-mono tabular-nums text-[11px] text-neutral-500">

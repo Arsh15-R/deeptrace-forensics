@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.config import settings
 from app.ml.common import StandardizedAnalysisResult
 from app.ml.image_detector import ImageDeepfakeDetector
+from app.ml.trained_detector import TrainedForensicDetector
 from app.ml.video_detector import VideoDeepfakeDetector
 from app.ml.audio_detector import AudioDeepfakeDetector
 from app.ml.text_detector import TextDeepfakeDetector
@@ -25,7 +26,11 @@ class MultimodalForensicEngine:
         return cls._instance
 
     def _initialize(self):
-        self.image_detector = ImageDeepfakeDetector()
+        backend_choice = getattr(settings, "DETECTOR_BACKEND", "trained").lower()
+        if backend_choice == "trained":
+            self.image_detector = TrainedForensicDetector()
+        else:
+            self.image_detector = ImageDeepfakeDetector()
         self.video_detector = VideoDeepfakeDetector()
         self.audio_detector = AudioDeepfakeDetector()
         self.text_detector = TextDeepfakeDetector()
