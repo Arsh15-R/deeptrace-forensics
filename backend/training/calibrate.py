@@ -7,6 +7,7 @@ Updates backend/models/config.json with fitted temperature and reports ECE befor
 
 import sys
 import json
+import time
 import argparse
 from pathlib import Path
 import numpy as np

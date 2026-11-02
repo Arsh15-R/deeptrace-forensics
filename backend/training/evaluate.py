@@ -149,9 +149,9 @@ def main():
     _, screen_preds, _ = run_inference(model, DataLoader(screen_ds, batch_size=args.batch_size, shuffle=False), device, temperature)
     screen_acc = float(accuracy_score(targets, screen_preds))
 
-    print(f"[*] Robustness | JPEG-50 Quality:     {jpeg50_acc*100:.2f}% (Δ: {(jpeg50_acc - acc)*100:+.2f}%)")
-    print(f"[*] Robustness | 50% Downscale:       {down50_acc*100:.2f}% (Δ: {(down50_acc - acc)*100:+.2f}%)")
-    print(f"[*] Robustness | Screenshot Simulated: {screen_acc*100:.2f}% (Δ: {(screen_acc - acc)*100:+.2f}%)")
+    print(f"[*] Robustness | JPEG-50 Quality:     {jpeg50_acc*100:.2f}% (Delta: {(jpeg50_acc - acc)*100:+.2f}%)")
+    print(f"[*] Robustness | 50% Downscale:       {down50_acc*100:.2f}% (Delta: {(down50_acc - acc)*100:+.2f}%)")
+    print(f"[*] Robustness | Screenshot Simulated: {screen_acc*100:.2f}% (Delta: {(screen_acc - acc)*100:+.2f}%)")
     print("================================================================================")
 
     # 4. Generate Visual Plots
