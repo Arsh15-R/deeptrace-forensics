@@ -99,6 +99,10 @@ class LinkAnalysisRequest(BaseModel):
     url: str = Field(..., description="Public media URL to securely ingest")
     case_reference: Optional[str] = None
 
+class WebsiteAnalysisRequest(BaseModel):
+    url: str = Field(..., description="Public website URL to inspect and analyze")
+    case_reference: Optional[str] = None
+
 class UserRecord(BaseModel):
     id: str
     email: str

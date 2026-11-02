@@ -16,7 +16,7 @@ export const SegmentedControl: React.FC<SegmentedControlProps> = ({
     { id: "video", label: "Video" },
     { id: "audio", label: "Audio" },
     { id: "text", label: "Text / Doc" },
-    { id: "link", label: "Remote Link" },
+    { id: "website", label: "Website Analysis" },
   ];
 
   return (

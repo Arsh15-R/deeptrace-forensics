@@ -244,13 +244,13 @@ export async function analyzeAudio(
   }
 }
 
-export async function analyzeLink(
+export async function analyzeWebsite(
   url: string,
   caseRef?: string,
   signal?: AbortSignal
 ): Promise<CaseRecord> {
   const headers = await getHeaders({ "Content-Type": "application/json" });
-  const endpoint = apiUrl("/api/cases/analyze/link");
+  const endpoint = "/api/website/analyze";
   if (typeof window !== "undefined") {
     console.log(`[DeepTrace Client] POST ${endpoint} (URL: ${url})`);
   }
@@ -262,9 +262,9 @@ export async function analyzeLink(
       signal: createRequestSignal(signal, 120000),
     });
 
-    return await parseApiResponse<CaseRecord>(res, "Link ingestion failed");
+    return await parseApiResponse<CaseRecord>(res, "Website analysis failed");
   } catch (err: any) {
-    throw formatNetworkError(err, "Failed to analyze remote link.");
+    throw formatNetworkError(err, "Failed to inspect website.");
   }
 }
 

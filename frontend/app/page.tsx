@@ -7,7 +7,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { ImageUploader } from "@/components/media-input/ImageUploader";
 import { VideoUploader } from "@/components/media-input/VideoUploader";
 import { AudioUploader } from "@/components/media-input/AudioUploader";
-import { LinkInput } from "@/components/media-input/LinkInput";
+import { WebsiteAnalysisInput } from "@/components/media-input/WebsiteAnalysisInput";
 import { TextInput } from "@/components/media-input/TextInput";
 import { MediaType, CaseRecord } from "@/lib/types";
 import { listCases } from "@/lib/api";
@@ -51,8 +51,8 @@ export default function HomePage() {
           {activeTab === "image" && <ImageUploader />}
           {activeTab === "video" && <VideoUploader />}
           {activeTab === "audio" && <AudioUploader />}
-          {activeTab === "link" && <LinkInput />}
           {activeTab === "text" && <TextInput />}
+          {activeTab === "website" && <WebsiteAnalysisInput />}
         </div>
       </GlassCard>
 
@@ -82,7 +82,7 @@ export default function HomePage() {
                     </span>
                     <span className="text-neutral-400 flex-shrink-0">•</span>
                     <span className="text-neutral-600 dark:text-neutral-400 truncate max-w-xs block">
-                      {item.file_name || (item.source_url ? "Remote URL" : "Linguistic Statement")}
+                      {item.file_name || (item.source_url ? (item.media_type === "website" ? "Website Inspection" : "Remote URL") : "Linguistic Statement")}
                     </span>
                   </div>
                   <div className="font-mono tabular-nums text-[11px] text-neutral-500">

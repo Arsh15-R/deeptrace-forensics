@@ -12,6 +12,7 @@ from app.api.routes_audit import router as audit_router
 from app.api.routes_analysis import router as analysis_router
 from app.api.routes_admin import router as admin_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_website import router as website_router
 from app.ml.engine import forensic_engine
 from app.utils.auth import get_current_user, CurrentUser
 
@@ -50,6 +51,7 @@ app.include_router(media_router, prefix="/api")
 app.include_router(report_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(website_router, prefix="/api")
 app.include_router(analysis_router)
 
 @app.get("/health", tags=["System"])

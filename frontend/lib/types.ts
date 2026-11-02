@@ -2,7 +2,91 @@ export type Verdict = 'likely_authentic' | 'inconclusive' | 'likely_ai_generated
 
 export type Assessment = 'likely_manipulated' | 'no_strong_indicators_detected' | 'inconclusive';
 
-export type MediaType = 'image' | 'video' | 'audio' | 'link' | 'text' | 'document';
+export type MediaType = 'image' | 'video' | 'audio' | 'text' | 'document' | 'website' | 'link';
+
+export interface TechnologyItem {
+  name: string;
+  category: 'frontend' | 'backend' | 'cms' | 'hosting' | 'javascript' | 'css' | 'analytics';
+  version?: string;
+  confidence: number;
+  evidence: string;
+  icon?: string;
+}
+
+export interface AiBuilderDetection {
+  isAiGenerated: boolean;
+  builderName: string | null;
+  confidence: number;
+  indicators: string[];
+  reasoning?: string;
+}
+
+export interface SecurityObservation {
+  name?: string;
+  status?: 'pass' | 'warning' | 'fail' | 'info';
+  header?: string;
+  value?: string;
+  description: string;
+  recommendation?: string;
+  category?: string;
+  title?: string;
+  severity?: 'pass' | 'warning' | 'alert' | 'fail' | 'info';
+}
+
+export interface WebsiteSecurityReport {
+  isHttps: boolean;
+  protocol: string;
+  sslValid?: boolean;
+  sslIssuer?: string;
+  sslExpiryDays?: number;
+  securityScore: number;
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
+  headersPresent: string[];
+  headersMissing: string[];
+  exposedTechnologies: string[];
+  observations: SecurityObservation[];
+}
+
+export interface WebsiteMetadata {
+  title: string | null;
+  description: string | null;
+  author: string | null;
+  canonicalUrl: string | null;
+  faviconUrl: string | null;
+  openGraph: Record<string, string>;
+  twitterCard: Record<string, string>;
+  jsonLd: Array<Record<string, any>>;
+  hasRobotsTxt: boolean;
+  hasSitemapXml: boolean;
+  robotsTxtUrl?: string;
+  sitemapXmlUrl?: string;
+  externalScriptsCount: number;
+  externalStylesheetsCount: number;
+  externalAssetDomains: string[];
+}
+
+export interface WebsiteAnalysisResult {
+  url: string;
+  finalUrl: string;
+  domain: string;
+  statusCode: number;
+  ipAddress?: string;
+  latencyMs: number;
+  timestamp: string;
+  htmlSizeBytes: number;
+  frontendFramework: string | null;
+  backendTechnology: string | null;
+  cms: string | null;
+  hostingCdn: string | null;
+  detectedTechnologies: TechnologyItem[];
+  aiBuilder: AiBuilderDetection;
+  metadata: WebsiteMetadata;
+  security: WebsiteSecurityReport;
+  verdict: Verdict;
+  confidence: number;
+  summary: string;
+  technicalFindings: string[];
+}
 
 export interface DetectorBreakdown {
   name: string;
@@ -54,6 +138,7 @@ export interface InTextMetadata {
     author?: string;
     bundleVersion?: string;
   };
+  websiteAnalysis?: WebsiteAnalysisResult;
   integrityScore?: number;
   integrityStatus?: string;
 }
@@ -151,17 +236,26 @@ export interface CaseRecord {
   heatmap_url?: string | null;
   heatmap_path?: string | null;
   media_url?: string | null;
-  timeline_scores: VideoFrameAnalysis[];
+  timeline_scores?: VideoFrameAnalysis[];
   text_snippet?: string | null;
   
-  model_name: string;
-  model_version: string;
+  model_name?: string;
+  model_version?: string;
   known_error_rate_fpr: number;
   known_error_rate_fnr: number;
   limitations_notes: string;
   
+  summary?: string | null;
+  technical_findings?: string[];
+  chain_of_custody_hash?: string;
+  p_value?: number;
+  neyman_pearson_threshold?: number;
+  pixel_noise_score?: number;
+  facial_illumination_score?: number;
+  metadata_consistency_score?: number;
+  
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface AuditLogRecord {

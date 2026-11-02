@@ -11,6 +11,7 @@ import {
   extractDocxTextAndMetadata,
 } from "@/lib/textForensicsServer";
 import { analyzeLinkForensics } from "@/lib/linkForensicsServer";
+import { analyzeWebsiteServer } from "@/lib/websiteAnalysisServer";
 import { CaseRecord, MediaType, Verdict } from "@/lib/types";
 
 export interface AnalysisInput {
@@ -86,8 +87,12 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
   const breakdown: any[] = [];
 
   // =========================================================================
-  // MODALITY 0: REMOTE LINK & WEB EVIDENCE FORENSICS
+  // MODALITY 0: WEBSITE & WEB EVIDENCE FORENSICS
   // =========================================================================
+  if (input.mediaType === "website" && input.sourceUrl) {
+    return await analyzeWebsiteServer(input.sourceUrl, input.caseRef);
+  }
+
   if (input.mediaType === "link" && input.sourceUrl) {
     const tLinkStart = Date.now();
     try {
@@ -267,7 +272,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     );
   }
 
-  const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : (input.mediaType === "link" ? ".html" : ""));
+  const ext = path.extname(input.filename) || (input.mediaType === "image" ? ".jpg" : (input.mediaType === "link" || input.mediaType === "website" ? ".html" : ""));
   const storageRelPath = `evidence/${caseId}${ext}`;
   const heatmapRelPath = (input.mediaType === "image" || pdfScannedImageBuffer) ? `heatmaps/${caseId}.png` : null;
   const supabaseStorageBase = "https://kqllmwzftudlxswtnqtg.supabase.co/storage/v1/object/public/evidence-vault";
@@ -293,7 +298,7 @@ export async function executeForensicAnalysis(input: AnalysisInput): Promise<Cas
     ) {
       if (input.mediaType === "image") uploadMime = "image/jpeg";
       else if (input.mediaType === "audio") uploadMime = "audio/wav";
-      else if (input.mediaType === "link") uploadMime = "text/html";
+      else if (input.mediaType === "link" || input.mediaType === "website") uploadMime = "text/html";
       else uploadMime = "application/pdf";
     }
 

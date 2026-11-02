@@ -15,6 +15,7 @@ import { AudioTimelineViewer } from "@/components/results/AudioTimelineViewer";
 import { EvidenceLedgerCard } from "@/components/results/EvidenceLedgerCard";
 import { InvestigativeNotice } from "@/components/results/InvestigativeNotice";
 import { InTextMetadataCard } from "@/components/results/InTextMetadataCard";
+import { WebsiteAnalysisDashboard } from "@/components/results/WebsiteAnalysisDashboard";
 import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { LoadingBar } from "@/components/ui/LoadingBar";
 
@@ -196,14 +197,14 @@ export default function CaseResultsPage() {
 
             {caseData.media_type === "video" && (
               <VideoTimelineScrubber
-                timeline={caseData.timeline_scores}
+                timeline={caseData.timeline_scores || []}
                 mediaUrl={caseData.media_url}
               />
             )}
 
             {caseData.media_type === "audio" && (
               <AudioTimelineViewer
-                timeline={caseData.timeline_scores}
+                timeline={caseData.timeline_scores || []}
                 mediaUrl={caseData.media_url}
               />
             )}
@@ -220,6 +221,27 @@ export default function CaseResultsPage() {
                 </div>
 
                 <InTextMetadataCard metadata={caseData.per_detector_scores?.inTextMetadata} />
+              </div>
+            )}
+
+            {(caseData.media_type === "website" || caseData.per_detector_scores?.inTextMetadata?.websiteAnalysis) && (
+              <div className="space-y-4">
+                {caseData.per_detector_scores?.inTextMetadata?.websiteAnalysis ? (
+                  <WebsiteAnalysisDashboard
+                    data={caseData.per_detector_scores.inTextMetadata.websiteAnalysis}
+                    caseId={caseData.id}
+                    caseNumber={caseData.case_number}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      Website URL: {caseData.source_url}
+                    </h3>
+                    <div className="p-4 rounded-subpanel bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-xs text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
+                      {caseData.text_snippet || "Website source snapshot recorded in vault."}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </GlassCard>
