@@ -319,32 +319,29 @@ export const WebsiteAnalysisInput: React.FC = () => {
 
       {/* Analysis Results Dashboard */}
       {analysisResult && websiteData && (
-        <div className="pt-4 border-t border-neutral-200/60 dark:border-neutral-800/60 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Inspection Report
-              </span>
-              <span className="text-xs text-neutral-400 font-mono">
-                {analysisResult.case_number}
-              </span>
+        <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-4">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center space-x-2 text-neutral-500 font-mono">
+              <span>Report</span>
+              <span>·</span>
+              <span>{analysisResult.case_number}</span>
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 text-xs">
               <button
                 type="button"
                 onClick={handleReset}
-                className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+                className="text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
               >
-                Inspect Another URL
+                Inspect another URL
               </button>
               <button
                 type="button"
                 onClick={() => router.push(`/results/${analysisResult.id}`)}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs font-bold hover:opacity-90 transition-opacity"
+                className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
               >
-                <span>View Full Case Dossier</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>Full dossier</span>
+                <span>→</span>
               </button>
             </div>
           </div>
