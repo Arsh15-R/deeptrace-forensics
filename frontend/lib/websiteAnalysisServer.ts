@@ -103,6 +103,35 @@ export async function validateSafeOutboundUrl(
 }
 
 /**
+ * Safely fetches an external client script or stylesheet bundle with strict size and timeout caps.
+ */
+async function safeFetchAssetContent(
+  assetUrl: string,
+  maxBytes = 768 * 1024,
+  timeoutMs = 4000
+): Promise<string> {
+  try {
+    const val = await validateSafeOutboundUrl(assetUrl);
+    if (!val.safe) return "";
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(assetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 DeepTrace-AssetInspector/2.0",
+        Accept: "*/*",
+      },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+    if (!res.ok) return "";
+    const buf = await res.arrayBuffer();
+    const slice = buf.byteLength > maxBytes ? buf.slice(0, maxBytes) : buf;
+    return new TextDecoder("utf-8", { fatal: false }).decode(slice);
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Performs safe asynchronous HTTP fetch with manual per-hop redirect validation (SSRF defense).
  */
 async function safeFetchWebsite(
@@ -238,7 +267,9 @@ async function safeFetchWebsite(
 function detectWebsiteTechnologies(
   html: string,
   headers: Headers,
-  finalUrl: string
+  finalUrl: string,
+  bundleJs = "",
+  bundleCss = ""
 ): {
   frontendFramework: string | null;
   backendTechnology: string | null;
@@ -248,6 +279,8 @@ function detectWebsiteTechnologies(
 } {
   const detected: TechnologyItem[] = [];
   const lowerHtml = html.toLowerCase();
+  const lowerJs = bundleJs.toLowerCase();
+  const lowerCss = bundleCss.toLowerCase();
   const serverHeader = (headers.get("server") || "").toLowerCase();
   const poweredBy = (headers.get("x-powered-by") || "").toLowerCase();
   const setCookie = (headers.get("set-cookie") || "").toLowerCase();
@@ -273,9 +306,15 @@ function detectWebsiteTechnologies(
     lowerHtml.includes("react-dom") ||
     lowerHtml.includes("data-reactroot") ||
     lowerHtml.includes("_reactlistening") ||
-    lowerHtml.includes("react.production.min.js")
+    lowerHtml.includes("react.production.min.js") ||
+    lowerJs.includes("react-dom") ||
+    lowerJs.includes("webpackchunk") ||
+    (lowerHtml.includes('id="root"') && (lowerJs.includes("react") || lowerHtml.includes(".js")))
   ) {
-    addTech("React", "frontend", 95, "Found React DOM markers / hydration roots");
+    addTech("React", "frontend", 96, "Found React DOM markers / hydration roots in client bundle");
+    if (lowerJs.includes("webpackchunk") || lowerHtml.includes("/static/js/")) {
+      addTech("Webpack", "javascript", 95, "Identified Webpack client chunk loader");
+    }
   }
 
   if (lowerHtml.includes("__nuxt__") || lowerHtml.includes("/_nuxt/") || lowerHtml.includes("data-n-head")) {
@@ -514,7 +553,13 @@ function calculateShannonEntropy(tokens: string[]): number {
  * Predicts whether the website is Human-made, AI-generated, or AI-assisted.
  * Calibrates confidence and guarantees that using standard React/Next.js/Tailwind alone does not flag AI generation.
  */
-function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string): AiBuilderDetection {
+function detectAiWebsiteBuilder(
+  html: string,
+  headers: Headers,
+  finalUrl: string,
+  bundleJs = "",
+  bundleCss = ""
+): AiBuilderDetection {
   const lowerHtml = html.toLowerCase();
   const lowerUrl = finalUrl.toLowerCase();
   const indicators: string[] = [];
@@ -530,11 +575,14 @@ function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string
     lowerHtml.includes("data-lovable") ||
     lowerUrl.includes("lovable.app") ||
     lowerUrl.includes("lovable.dev") ||
-    lowerHtml.includes("gptengineer")
+    lowerHtml.includes("gptengineer") ||
+    bundleJs.toLowerCase().includes("lovable-tagger")
   ) {
     explicitBuilder = "Lovable";
     explicitConfidence = 96.5;
-    if (lowerHtml.includes("lovable-tagger")) indicators.push("Embedded Lovable code inspector tagger (lovable-tagger)");
+    if (lowerHtml.includes("lovable-tagger") || bundleJs.toLowerCase().includes("lovable-tagger")) {
+      indicators.push("Embedded Lovable code inspector tagger (lovable-tagger)");
+    }
     if (lowerHtml.includes("cdn.lovable.dev")) indicators.push("Assets served via Lovable CDN (cdn.lovable.dev)");
     if (lowerUrl.includes("lovable.app")) indicators.push("Hosted under proprietary Lovable subdomain (*.lovable.app)");
     if (lowerHtml.includes("data-lovable")) indicators.push("DOM elements contain data-lovable telemetry attributes");
@@ -547,6 +595,7 @@ function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string
       lowerHtml.includes("sb1-") ||
       lowerHtml.includes("bolt-generated") ||
       lowerHtml.includes("bolt.diy") ||
+      bundleJs.toLowerCase().includes("bolt-generated") ||
       (lowerHtml.includes("webcontainer") && lowerHtml.includes("stackblitz")))
   ) {
     explicitBuilder = "Bolt.new";
@@ -563,11 +612,14 @@ function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string
       lowerHtml.includes("data-v0-t") ||
       lowerHtml.includes("v0-generated") ||
       lowerHtml.includes("v0.build") ||
+      bundleJs.toLowerCase().includes("data-v0-t") ||
       lowerHtml.includes('name="generator" content="v0'))
   ) {
     explicitBuilder = "v0 (Vercel)";
     explicitConfidence = 96.0;
-    if (lowerHtml.includes("data-v0-t")) indicators.push("Vercel v0 telemetry data attribute (data-v0-t)");
+    if (lowerHtml.includes("data-v0-t") || bundleJs.toLowerCase().includes("data-v0-t")) {
+      indicators.push("Vercel v0 telemetry data attribute (data-v0-t)");
+    }
     if (lowerHtml.includes("v0.dev")) indicators.push("Direct reference to v0.dev generation origin");
     if (lowerHtml.includes("v0-generated")) indicators.push("Source code contains v0-generated artifact tags");
   }
@@ -614,6 +666,66 @@ function detectAiWebsiteBuilder(html: string, headers: Headers, finalUrl: string
     explicitBuilder = "Wix Studio AI";
     explicitConfidence = 88.0;
     indicators.push("Wix Artificial Design Intelligence (ADI) scaffolding detected");
+  }
+
+  // 8. Client Bundle Inspection for Exported AI Single Page Applications
+  if (bundleJs || bundleCss) {
+    // 8a. Monolithic synthetic client routing (15+ routes)
+    const clientRoutes = Array.from(new Set(bundleJs.match(/path:\s*["']([^"']+)["']/g) || []));
+    if (clientRoutes.length >= 15) {
+      indicators.push(`Synthetic monolithic client routing: ${clientRoutes.length} application routes scaffolded inside single client bundle`);
+    }
+
+    // 8b. Redundant Google Font imports in CSS bundle
+    const fontImports = bundleCss.match(/@import\s+url\([^)]+\);/g) || [];
+    if (fontImports.length >= 3) {
+      indicators.push(`Redundant font cascade: ${fontImports.length} separate Google Font imports stacked at top of CSS bundle`);
+    }
+
+    // 8c. AI-typical modular CSS prefix clustering
+    const cssClassMatches = Array.from(new Set(bundleCss.match(/\.([a-zA-Z0-9_-]+)/g) || []));
+    const prefixCounts: Record<string, number> = {};
+    for (const cm of cssClassMatches) {
+      const name = cm.slice(1);
+      const parts = name.split("-");
+      if (parts.length > 1 && parts[0].length <= 5) {
+        prefixCounts[parts[0]] = (prefixCounts[parts[0]] || 0) + 1;
+      }
+    }
+    const dominantPrefixes = Object.entries(prefixCounts).filter(([_, count]) => count >= 30);
+    if (dominantPrefixes.length >= 2) {
+      indicators.push(
+        `AI-generated modular CSS architecture: ${cssClassMatches.length} classes clustered under repetitive component prefixes (${dominantPrefixes
+          .map(([p, c]) => `${p}-* (${c})`)
+          .join(", ")})`
+      );
+    }
+
+    // 8d. Glow / sparkle animation keyframes
+    const glowKeyframes = Array.from(
+      new Set(bundleCss.match(/@keyframes\s+([a-zA-Z0-9_-]*(?:sparkle|glow|pulse|shimmer)[a-zA-Z0-9_-]*)/gi) || [])
+    );
+    if (glowKeyframes.length >= 2) {
+      indicators.push(`Synthetic animation scaffolding: AI-typical glow/sparkle keyframe effects (${glowKeyframes.slice(0, 4).join(", ")})`);
+    }
+
+    // 8e. Embedded synthetic assistant widget
+    if (bundleCss.includes(".cb-container") || bundleCss.includes("cb-launcher") || bundleJs.includes("cb-launcher")) {
+      indicators.push("Embedded synthetic assistant widget: Fixed position chatbot launcher (.cb-launcher / .cb-container) with pulse effects");
+    }
+
+    // 8f. LLM copywriting buzzword concentration
+    const aiPhrases = ["seamlessly", "cutting-edge", "beacon", "empower", "tailored", "court-admissible"];
+    const foundPhrases = aiPhrases.filter((p) => new RegExp(`\\b${p}\\b`, "i").test(bundleJs));
+    if (foundPhrases.length >= 2) {
+      indicators.push(`LLM copywriting pattern: High density of characteristic promotional terms (${foundPhrases.join(", ")})`);
+    }
+
+    // If strong synthetic architecture is found in client bundle
+    if (!explicitBuilder && (dominantPrefixes.length >= 2 || clientRoutes.length >= 15)) {
+      explicitBuilder = "Autonomous AI Agent / AI Coding Assistant";
+      explicitConfidence = Math.min(96.0, 88.0 + indicators.length * 1.5);
+    }
   }
 
   // =========================================================================
@@ -1142,6 +1254,38 @@ export async function analyzeWebsiteServer(
   const fetchResult = await safeFetchWebsite(url);
   const { html, responseHeaders, finalUrl, statusCode, resolvedIp, latencyMs } = fetchResult;
 
+  // Step 1b: Inspect and safely fetch linked client script & stylesheet bundles for SPA evaluation
+  let bundleJs = "";
+  let bundleCss = "";
+  try {
+    const scriptMatches = Array.from(html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi));
+    const cssMatches = Array.from(html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']/gi));
+
+    const primaryScript =
+      scriptMatches.map((m) => m[1]).find((s) => /main|app|index|bundle/i.test(s)) || scriptMatches[0]?.[1];
+    const primaryCss =
+      cssMatches.map((m) => m[1]).find((c) => /main|app|index|style/i.test(c)) || cssMatches[0]?.[1];
+
+    const fetches: Promise<void>[] = [];
+    if (primaryScript) {
+      const scriptUrl = new URL(primaryScript, finalUrl).toString();
+      fetches.push(
+        safeFetchAssetContent(scriptUrl, 768 * 1024).then((txt) => {
+          bundleJs = txt;
+        })
+      );
+    }
+    if (primaryCss) {
+      const cssUrl = new URL(primaryCss, finalUrl).toString();
+      fetches.push(
+        safeFetchAssetContent(cssUrl, 512 * 1024).then((txt) => {
+          bundleCss = txt;
+        })
+      );
+    }
+    await Promise.all(fetches);
+  } catch {}
+
   const urlObj = new URL(finalUrl);
   const domain = urlObj.hostname;
   const buffer = Buffer.from(html, "utf-8");
@@ -1149,10 +1293,10 @@ export async function analyzeWebsiteServer(
   const htmlSizeBytes = buffer.length;
 
   // Step 2: Tech Detection
-  const tech = detectWebsiteTechnologies(html, responseHeaders, finalUrl);
+  const tech = detectWebsiteTechnologies(html, responseHeaders, finalUrl, bundleJs, bundleCss);
 
   // Step 3: AI Builder Detection
-  const aiBuilder = detectAiWebsiteBuilder(html, responseHeaders, finalUrl);
+  const aiBuilder = detectAiWebsiteBuilder(html, responseHeaders, finalUrl, bundleJs, bundleCss);
 
   // Step 4: Metadata Extraction
   const metadata = await extractWebsiteMetadata(html, finalUrl);

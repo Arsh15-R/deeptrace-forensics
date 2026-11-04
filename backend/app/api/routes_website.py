@@ -20,8 +20,16 @@ logger = logging.getLogger("deeptrace")
 router = APIRouter(prefix="/website", tags=["Website Analysis"])
 
 
-def extract_website_technologies(html: str, headers: httpx.Headers, final_url: str) -> Dict[str, Any]:
+def extract_website_technologies(
+    html: str,
+    headers: httpx.Headers,
+    final_url: str,
+    bundle_js: str = "",
+    bundle_css: str = "",
+) -> Dict[str, Any]:
     lower_html = html.lower()
+    lower_js = bundle_js.lower()
+    lower_css = bundle_css.lower()
     server = headers.get("server", "").lower()
     powered_by = headers.get("x-powered-by", "").lower()
     set_cookie = headers.get("set-cookie", "").lower()
@@ -42,8 +50,17 @@ def extract_website_technologies(html: str, headers: httpx.Headers, final_url: s
     if "__next_data__" in lower_html or "/_next/static" in lower_html or 'id="__next"' in lower_html:
         add_tech("Next.js", "frontend", 98.0, "Found __NEXT_DATA__ / _next asset chunks")
         add_tech("React", "frontend", 99.0, "Next.js relies on React runtime")
-    elif "react-dom" in lower_html or "data-reactroot" in lower_html or "_reactlistening" in lower_html:
-        add_tech("React", "frontend", 95.0, "Found React DOM markers / hydration roots")
+    elif (
+        "react-dom" in lower_html
+        or "data-reactroot" in lower_html
+        or "_reactlistening" in lower_html
+        or "react-dom" in lower_js
+        or "webpackchunk" in lower_js
+        or ('id="root"' in lower_html and ("react" in lower_js or ".js" in lower_html))
+    ):
+        add_tech("React", "frontend", 96.0, "Found React DOM markers / hydration roots in client bundle")
+        if "webpackchunk" in lower_js or "/static/js/" in lower_html:
+            add_tech("Webpack", "javascript", 95.0, "Identified Webpack client chunk loader")
 
     if "__nuxt__" in lower_html or "/_nuxt/" in lower_html or "data-n-head" in lower_html:
         add_tech("Nuxt.js", "frontend", 98.0, "Found __NUXT__ state bundle")
@@ -134,15 +151,31 @@ def extract_website_technologies(html: str, headers: httpx.Headers, final_url: s
     }
 
 
-def detect_ai_website_builder(html: str, headers: httpx.Headers, final_url: str) -> Dict[str, Any]:
+def detect_ai_website_builder(
+    html: str,
+    headers: httpx.Headers,
+    final_url: str,
+    bundle_js: str = "",
+    bundle_css: str = "",
+) -> Dict[str, Any]:
     lower_html = html.lower()
     lower_url = final_url.lower()
+    lower_js = bundle_js.lower()
     indicators: List[str] = []
 
-    if "lovable-tagger" in lower_html or "cdn.lovable.dev" in lower_html or "@lovable/" in lower_html or "lovable.app" in lower_url:
-        if "lovable-tagger" in lower_html: indicators.append("Embedded Lovable code inspector tagger (lovable-tagger)")
-        if "cdn.lovable.dev" in lower_html: indicators.append("Assets served via Lovable CDN (cdn.lovable.dev)")
-        if "lovable.app" in lower_url: indicators.append("Hosted under proprietary Lovable subdomain (*.lovable.app)")
+    if (
+        "lovable-tagger" in lower_html
+        or "cdn.lovable.dev" in lower_html
+        or "@lovable/" in lower_html
+        or "lovable.app" in lower_url
+        or "lovable-tagger" in lower_js
+    ):
+        if "lovable-tagger" in lower_html or "lovable-tagger" in lower_js:
+            indicators.append("Embedded Lovable code inspector tagger (lovable-tagger)")
+        if "cdn.lovable.dev" in lower_html:
+            indicators.append("Assets served via Lovable CDN (cdn.lovable.dev)")
+        if "lovable.app" in lower_url:
+            indicators.append("Hosted under proprietary Lovable subdomain (*.lovable.app)")
         return {
             "isAiGenerated": True,
             "builderName": "Lovable",
@@ -150,7 +183,7 @@ def detect_ai_website_builder(html: str, headers: httpx.Headers, final_url: str)
             "indicators": indicators,
         }
 
-    if "bolt.new" in lower_url or "sb1-" in lower_html or "bolt-generated" in lower_html or "bolt.diy" in lower_html:
+    if "bolt.new" in lower_url or "sb1-" in lower_html or "bolt-generated" in lower_html or "bolt.diy" in lower_html or "bolt-generated" in lower_js:
         if "bolt.new" in lower_url: indicators.append("Hosted under Bolt.new workspace endpoint")
         if "sb1-" in lower_html: indicators.append("StackBlitz / Bolt project identifier (sb1-*) detected")
         return {
@@ -160,8 +193,9 @@ def detect_ai_website_builder(html: str, headers: httpx.Headers, final_url: str)
             "indicators": indicators,
         }
 
-    if "v0.dev" in lower_html or "data-v0-t" in lower_html or "v0-generated" in lower_html:
-        if "data-v0-t" in lower_html: indicators.append("Vercel v0 telemetry data attribute (data-v0-t)")
+    if "v0.dev" in lower_html or "data-v0-t" in lower_html or "v0-generated" in lower_html or "data-v0-t" in lower_js:
+        if "data-v0-t" in lower_html or "data-v0-t" in lower_js:
+            indicators.append("Vercel v0 telemetry data attribute (data-v0-t)")
         return {
             "isAiGenerated": True,
             "builderName": "v0 (Vercel)",
@@ -186,6 +220,47 @@ def detect_ai_website_builder(html: str, headers: httpx.Headers, final_url: str)
             "confidence": 91.0,
             "indicators": indicators,
         }
+
+    # Inspect client bundle for exported AI-generated SPAs
+    if bundle_js or bundle_css:
+        client_routes = set(re.findall(r'path:\s*["\']([^"\']+)["\']', bundle_js))
+        if len(client_routes) >= 15:
+            indicators.append(f"Synthetic monolithic client routing: {len(client_routes)} application routes scaffolded inside single client bundle")
+
+        font_imports = re.findall(r'@import\s+url\([^)]+\);', bundle_css)
+        if len(font_imports) >= 3:
+            indicators.append(f"Redundant font cascade: {len(font_imports)} separate Google Font imports stacked at top of CSS bundle")
+
+        css_classes = set(re.findall(r'\.([a-zA-Z0-9_-]+)', bundle_css))
+        prefix_counts: Dict[str, int] = {}
+        for c in css_classes:
+            parts = c.split("-")
+            if len(parts) > 1 and len(parts[0]) <= 5:
+                p = parts[0]
+                prefix_counts[p] = prefix_counts.get(p, 0) + 1
+        dominant_prefixes = [f"{p}-* ({cnt})" for p, cnt in prefix_counts.items() if cnt >= 30]
+        if len(dominant_prefixes) >= 2:
+            indicators.append(f"AI-generated modular CSS architecture: {len(css_classes)} classes clustered under repetitive component prefixes ({', '.join(dominant_prefixes)})")
+
+        glow_keyframes = set(re.findall(r'@keyframes\s+([a-zA-Z0-9_-]*(?:sparkle|glow|pulse|shimmer)[a-zA-Z0-9_-]*)', bundle_css, re.I))
+        if len(glow_keyframes) >= 2:
+            indicators.append(f"Synthetic animation scaffolding: AI-typical glow/sparkle keyframe effects ({', '.join(list(glow_keyframes)[:4])})")
+
+        if ".cb-container" in bundle_css or "cb-launcher" in bundle_css or "cb-launcher" in bundle_js:
+            indicators.append("Embedded synthetic assistant widget: Fixed position chatbot launcher (.cb-launcher / .cb-container) with pulse effects")
+
+        ai_phrases = ["seamlessly", "cutting-edge", "beacon", "empower", "tailored", "court-admissible"]
+        found_phrases = [p for p in ai_phrases if re.search(r'\b' + p + r'\b', bundle_js, re.I)]
+        if len(found_phrases) >= 2:
+            indicators.append(f"LLM copywriting pattern: High density of characteristic promotional terms ({', '.join(found_phrases)})")
+
+        if len(dominant_prefixes) >= 2 or len(client_routes) >= 15:
+            return {
+                "isAiGenerated": True,
+                "builderName": "Autonomous AI Agent / AI Coding Assistant",
+                "confidence": min(96.0, 88.0 + len(indicators) * 1.5),
+                "indicators": indicators,
+            }
 
     return {
         "isAiGenerated": False,
@@ -358,9 +433,43 @@ async def analyze_website_endpoint(
     sha256 = calculate_sha256(data_bytes)
     html_size_bytes = len(data_bytes)
 
+    # Inspect and safely fetch linked client script & stylesheet bundles for SPA evaluation
+    bundle_js = ""
+    bundle_css = ""
+    try:
+        script_matches = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html_content, re.I)
+        css_matches = re.findall(r'<link[^>]+rel=["\']stylesheet["\'][^>]+href=["\']([^"\']+)["\']', html_content, re.I)
+
+        primary_script = next((s for s in script_matches if re.search(r'main|app|index|bundle', s, re.I)), script_matches[0] if script_matches else None)
+        primary_css = next((c for c in css_matches if re.search(r'main|app|index|style', c, re.I)), css_matches[0] if css_matches else None)
+
+        async def _fetch_asset(asset_rel_url: str, max_bytes: int = 768 * 1024) -> str:
+            asset_full = urllib.parse.urljoin(final_url, asset_rel_url)
+            is_safe, _, _ = validate_outbound_url(asset_full)
+            if not is_safe:
+                return ""
+            try:
+                async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as asset_client:
+                    r = await asset_client.get(
+                        asset_full,
+                        headers={"User-Agent": "DeepTrace-AssetInspector/2.0", "Accept": "*/*"}
+                    )
+                    if r.status_code == 200:
+                        return r.text[:max_bytes]
+            except Exception:
+                pass
+            return ""
+
+        if primary_script:
+            bundle_js = await _fetch_asset(primary_script, 768 * 1024)
+        if primary_css:
+            bundle_css = await _fetch_asset(primary_css, 512 * 1024)
+    except Exception:
+        pass
+
     # Technology & AI builder inspection
-    tech = extract_website_technologies(html_content, final_headers, final_url)
-    ai_builder = detect_ai_website_builder(html_content, final_headers, final_url)
+    tech = extract_website_technologies(html_content, final_headers, final_url, bundle_js, bundle_css)
+    ai_builder = detect_ai_website_builder(html_content, final_headers, final_url, bundle_js, bundle_css)
     security = inspect_website_security(final_url, final_headers)
 
     # 4-Part Multimodal Model Inference
@@ -370,6 +479,14 @@ async def analyze_website_endpoint(
         final_url,
         {"hasRobotsTxt": False, "hasSitemapXml": False}
     )
+
+    if ai_builder["isAiGenerated"]:
+        ml_eval["predictedClass"] = "ai_generated"
+        ml_eval["classificationLabel"] = "AI-generated"
+        ml_eval["calibratedConfidence"] = max(ml_eval["calibratedConfidence"], ai_builder["confidence"])
+        ml_eval["probabilities"]["ai_generated"] = round(ai_builder["confidence"] / 100.0, 3)
+        ml_eval["probabilities"]["human_made"] = round((100.0 - ai_builder["confidence"]) / 200.0, 3)
+        ml_eval["probabilities"]["ai_assisted"] = round((100.0 - ai_builder["confidence"]) / 200.0, 3)
 
     # Enrich AI builder findings with 3-class classification
     ai_builder["predictedClass"] = ml_eval["predictedClass"]
